@@ -1,0 +1,46 @@
+{
+  "ver": "1.0.27",
+  "importer": "image",
+  "imported": true,
+  "uuid": "38fc49d0-3f8b-4479-8534-22dfdb5980c9",
+  "files": [
+    ".json",
+    ".png"
+  ],
+  "subMetas": {
+    "6c48a": {
+      "importer": "texture",
+      "uuid": "38fc49d0-3f8b-4479-8534-22dfdb5980c9@6c48a",
+      "displayName": "bg_fg",
+      "id": "6c48a",
+      "name": "texture",
+      "userData": {
+        "wrapModeS": "clamp-to-edge",
+        "wrapModeT": "clamp-to-edge",
+        "imageUuidOrDatabaseUri": "38fc49d0-3f8b-4479-8534-22dfdb5980c9",
+        "isUuid": true,
+        "visible": false,
+        "minfilter": "linear",
+        "magfilter": "linear",
+        "mipfilter": "nearest",
+        "anisotropy": 0
+      },
+      "ver": "1.0.22",
+      "imported": true,
+      "files": [
+        ".json"
+      ],
+      "subMetas": {}
+    }
+  },
+  "userData": {
+    "type": "texture",
+    "hasAlpha": true,
+    "fixAlphaTransparencyArtifacts": false,
+    "redirect": "38fc49d0-3f8b-4479-8534-22dfdb5980c9@6c48a",
+    "compressSettings": {
+      "useCompressTexture": true,
+      "presetId": "22j+WJwGxJTLk698MA+AoN"
+    }
+  }
+}
