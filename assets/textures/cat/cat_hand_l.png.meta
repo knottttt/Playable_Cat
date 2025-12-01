@@ -11,7 +11,7 @@
     "6c48a": {
       "importer": "texture",
       "uuid": "a612f8c2-4a35-4c4c-a533-2c884146ba5e@6c48a",
-      "displayName": "slots_wheel13_2",
+      "displayName": "cat_hand_l",
       "id": "6c48a",
       "name": "texture",
       "userData": {
@@ -35,7 +35,7 @@
     "f9941": {
       "importer": "sprite-frame",
       "uuid": "a612f8c2-4a35-4c4c-a533-2c884146ba5e@f9941",
-      "displayName": "slots_wheel13_2",
+      "displayName": "cat_hand_l",
       "id": "f9941",
       "name": "spriteFrame",
       "userData": {
