@@ -1,5 +1,16 @@
-// assets/scripts/ui/SlotIdleController.ts
-import { _decorator, Component, Node, tween, Vec3, UIOpacity, Tween } from 'cc';
+// assets/scripts/SlotIdleController.ts
+
+import {
+    _decorator,
+    Component,
+    Node,
+    tween,
+    Vec3,
+    UIOpacity,
+    Tween,
+} from 'cc';
+import { FeatureFiresawController } from './FeatureFiresawController';
+
 const { ccclass, property } = _decorator;
 
 type CellData = {
@@ -29,13 +40,19 @@ export class SlotIdleController extends Component {
     @property
     reelSpinDuration: number = 1.5;
 
-    // 最终：哪些 cell 要是 scatter（第一行的 1、2、3）
     @property([Node])
     resultScatterCells: Node[] = [];
 
-    // 最终：哪些 cell 要是 feature（第一行的 4）
     @property([Node])
     resultFeatureCells: Node[] = [];
+
+    /** 上方 wheel feature（firesaw）的控制器 */
+    @property(FeatureFiresawController)
+    featureController: FeatureFiresawController = null;
+
+    /** 结果 cell 呼吸后，延迟多久再进入 feature（秒） */
+    @property
+    featureDelay: number = 2.0;
 
     private spinTween: Tween<Node> = null;
     private originalScale: Vec3 = new Vec3(1, 1, 1);
@@ -44,8 +61,8 @@ export class SlotIdleController extends Component {
     private cells: CellData[] = [];
     private spinElapsed: number = 0;
 
-    // 结果高亮用
     private highlightInfos: HighlightData[] = [];
+    private hasTriggeredFeature: boolean = false;
 
     start() {
         this.collectCells();
@@ -58,7 +75,7 @@ export class SlotIdleController extends Component {
         this.startSpinButtonIdle();
     }
 
-    /* ---------------- 收集 cell 结构 ---------------- */
+    /* 收集 cell 结构 */
 
     private collectCells() {
         this.cells.length = 0;
@@ -68,12 +85,10 @@ export class SlotIdleController extends Component {
         for (let i = 0; i < children.length; i++) {
             const child = children[i];
 
-            // 直接是 cell_*
             if (child.name.indexOf('cell_') === 0) {
                 this.pushCell(child);
             }
 
-            // 兼容 icon_0/cell_0 这种结构
             const grandChildren = child.children;
             for (let j = 0; j < grandChildren.length; j++) {
                 const gc = grandChildren[j];
@@ -94,26 +109,20 @@ export class SlotIdleController extends Component {
         const icons: Node[] = [];
         for (let i = 0; i < children.length; i++) {
             const n = children[i];
-
-            // frame 不参与滚动
-            if (n.name === 'frame') {
-                continue;
-            }
+            if (n.name === 'frame') continue;
             icons.push(n);
         }
 
-        if (icons.length === 0) return;
+        if (!icons.length) return;
 
-        const data: CellData = {
-            cell: cell,
-            icons: icons,
-            index: 0
-        };
-
-        this.cells.push(data);
+        this.cells.push({
+            cell,
+            icons,
+            index: 0,
+        });
     }
 
-    /* ---------------- 待机：随机一帧 ---------------- */
+    /* 待机：随机一帧 */
 
     private randomizeIconsForIdle() {
         for (let c = 0; c < this.cells.length; c++) {
@@ -125,12 +134,12 @@ export class SlotIdleController extends Component {
             data.index = r;
 
             for (let i = 0; i < icons.length; i++) {
-                icons[i].active = (i === data.index);
+                icons[i].active = (i === r);
             }
         }
     }
 
-    /* ---------------- 滚轴单步：顺序循环 ---------------- */
+    /* 滚轴单步 */
 
     private stepIconsOnce() {
         for (let c = 0; c < this.cells.length; c++) {
@@ -146,7 +155,7 @@ export class SlotIdleController extends Component {
         }
     }
 
-    /* ---------------- Spin 按钮呼吸动画 ---------------- */
+    /* Spin 按钮呼吸 */
 
     private startSpinButtonIdle() {
         if (!this.spinButton || this.spinTween) return;
@@ -173,7 +182,7 @@ export class SlotIdleController extends Component {
         }
     }
 
-    /* ---------------- 点击 Spin ---------------- */
+    /* 点击 Spin */
 
     public onClickSpin() {
         if (this.isReelSpinning) return;
@@ -195,9 +204,7 @@ export class SlotIdleController extends Component {
         }
 
         let op = this.blackMask.getComponent(UIOpacity);
-        if (!op) {
-            op = this.blackMask.addComponent(UIOpacity);
-        }
+        if (!op) op = this.blackMask.addComponent(UIOpacity);
 
         tween(op)
             .to(0.4, { opacity: 0 })
@@ -208,18 +215,16 @@ export class SlotIdleController extends Component {
             .start();
     }
 
-    /* ---------------- 滚轴逻辑 ---------------- */
+    /* 滚轴主逻辑 */
 
     private startReelSpin() {
         this.spinElapsed = 0;
         const stepInterval = 0.05;
-
         this.schedule(this.reelSpinTick, stepInterval);
     }
 
     private reelSpinTick(dt: number) {
         this.spinElapsed += dt;
-
         this.stepIconsOnce();
 
         if (this.spinElapsed >= this.reelSpinDuration) {
@@ -228,15 +233,23 @@ export class SlotIdleController extends Component {
 
             this.stepIconsOnce();
 
-            // 最终结果：强制落位
             this.applyFinalResult();
 
-            // 最终结果出来后，开启高亮动画
+            // ✳️ 开始结果高亮（呼吸）
             this.startResultHighlight();
+
+            // ✳️ 等待 featureDelay 秒：停止 cell 呼吸 → 进入 feature（alarm + blackMask）
+            if (!this.hasTriggeredFeature && this.featureController) {
+                this.hasTriggeredFeature = true;
+                this.scheduleOnce(() => {
+                    this.stopResultHighlight();               // 显示 feature 时停止 cell 呼吸
+                    this.featureController.startWheelFeature();
+                }, this.featureDelay);
+            }
         }
     }
 
-    /* ---------------- 最终结果：只让第一行变 scatter/feature ---------------- */
+    /* 最终结果：scatter/feature + 其他随机 */
 
     private applyFinalResult() {
         for (let c = 0; c < this.cells.length; c++) {
@@ -248,7 +261,6 @@ export class SlotIdleController extends Component {
             const isScatterCell =
                 this.resultScatterCells &&
                 this.resultScatterCells.indexOf(cellNode) !== -1;
-
             const isFeatureCell =
                 this.resultFeatureCells &&
                 this.resultFeatureCells.indexOf(cellNode) !== -1;
@@ -273,9 +285,7 @@ export class SlotIdleController extends Component {
                     }
                 }
             } else {
-                // 非目标格子：在所有“普通符号”里随机一个（排除 scatter / feature）
                 const normalIndices: number[] = [];
-
                 for (let i = 0; i < icons.length; i++) {
                     const name = icons[i].name.toLowerCase();
                     if (
@@ -299,27 +309,22 @@ export class SlotIdleController extends Component {
         }
     }
 
-    /* ---------------- 结果高亮：scatter×3 + feature×1 呼吸动画 ---------------- */
+    /* 结果高亮：scatter×3 + feature×1 呼吸动画 */
 
     private startResultHighlight() {
-        // 清理旧的（防止重复开启）
         this.stopResultHighlight();
 
         const targets: Node[] = [];
         if (this.resultScatterCells) {
             for (let i = 0; i < this.resultScatterCells.length; i++) {
                 const n = this.resultScatterCells[i];
-                if (n && targets.indexOf(n) === -1) {
-                    targets.push(n);
-                }
+                if (n && targets.indexOf(n) === -1) targets.push(n);
             }
         }
         if (this.resultFeatureCells) {
             for (let i = 0; i < this.resultFeatureCells.length; i++) {
                 const n = this.resultFeatureCells[i];
-                if (n && targets.indexOf(n) === -1) {
-                    targets.push(n);
-                }
+                if (n && targets.indexOf(n) === -1) targets.push(n);
             }
         }
 
@@ -328,8 +333,6 @@ export class SlotIdleController extends Component {
             const origin = node.scale.clone();
             const bigger = new Vec3(origin.x * 1.12, origin.y * 1.12, origin.z);
 
-            // TODO：如果以后要改成 Animation 组件 / Spine 播放，
-            // 可以直接在这里替换 tween 的实现。
             const tw = tween(node)
                 .to(0.4, { scale: bigger })
                 .to(0.4, { scale: origin })
@@ -338,23 +341,18 @@ export class SlotIdleController extends Component {
                 .start();
 
             this.highlightInfos.push({
-                node: node,
+                node,
                 tween: tw,
-                originalScale: origin
+                originalScale: origin,
             });
         }
     }
 
-    // 预留一个停止高亮的接口，后面你进 wheel feature 时可以调用
     public stopResultHighlight() {
         for (let i = 0; i < this.highlightInfos.length; i++) {
             const info = this.highlightInfos[i];
-            if (info.tween) {
-                info.tween.stop();
-            }
-            if (info.node) {
-                info.node.setScale(info.originalScale);
-            }
+            if (info.tween) info.tween.stop();
+            if (info.node) info.node.setScale(info.originalScale);
         }
         this.highlightInfos.length = 0;
     }
