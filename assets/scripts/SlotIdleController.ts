@@ -8,6 +8,12 @@ type CellData = {
     index: number;
 };
 
+type HighlightData = {
+    node: Node;
+    tween: Tween<Node>;
+    originalScale: Vec3;
+};
+
 @ccclass('SlotIdleController')
 export class SlotIdleController extends Component {
 
@@ -37,6 +43,9 @@ export class SlotIdleController extends Component {
 
     private cells: CellData[] = [];
     private spinElapsed: number = 0;
+
+    // 结果高亮用
+    private highlightInfos: HighlightData[] = [];
 
     start() {
         this.collectCells();
@@ -116,7 +125,7 @@ export class SlotIdleController extends Component {
             data.index = r;
 
             for (let i = 0; i < icons.length; i++) {
-                icons[i].active = (i === r);
+                icons[i].active = (i === data.index);
             }
         }
     }
@@ -221,75 +230,138 @@ export class SlotIdleController extends Component {
 
             // 最终结果：强制落位
             this.applyFinalResult();
+
+            // 最终结果出来后，开启高亮动画
+            this.startResultHighlight();
         }
     }
 
     /* ---------------- 最终结果：只让第一行变 scatter/feature ---------------- */
 
     private applyFinalResult() {
-    for (let c = 0; c < this.cells.length; c++) {
-        const data = this.cells[c];
-        const cellNode = data.cell;
-        const icons = data.icons;
-        if (!icons.length) continue;
+        for (let c = 0; c < this.cells.length; c++) {
+            const data = this.cells[c];
+            const cellNode = data.cell;
+            const icons = data.icons;
+            if (!icons.length) continue;
 
-        const isScatterCell =
-            this.resultScatterCells &&
-            this.resultScatterCells.indexOf(cellNode) !== -1;
+            const isScatterCell =
+                this.resultScatterCells &&
+                this.resultScatterCells.indexOf(cellNode) !== -1;
 
-        const isFeatureCell =
-            this.resultFeatureCells &&
-            this.resultFeatureCells.indexOf(cellNode) !== -1;
+            const isFeatureCell =
+                this.resultFeatureCells &&
+                this.resultFeatureCells.indexOf(cellNode) !== -1;
 
-        if (isScatterCell || isFeatureCell) {
-            const targetType = isFeatureCell ? 'feature' : 'scatter';
-            const lowerType = targetType.toLowerCase();
-            let targetIndex = -1;
+            if (isScatterCell || isFeatureCell) {
+                const targetType = isFeatureCell ? 'feature' : 'scatter';
+                const lowerType = targetType.toLowerCase();
+                let targetIndex = -1;
 
-            for (let i = 0; i < icons.length; i++) {
-                const name = icons[i].name.toLowerCase();
-                if (name.indexOf(lowerType) !== -1) {
-                    targetIndex = i;
-                    break;
-                }
-            }
-
-            if (targetIndex >= 0) {
-                data.index = targetIndex;
                 for (let i = 0; i < icons.length; i++) {
-                    icons[i].active = (i === data.index);
+                    const name = icons[i].name.toLowerCase();
+                    if (name.indexOf(lowerType) !== -1) {
+                        targetIndex = i;
+                        break;
+                    }
                 }
-            }
-        } else {
-            // 非目标格子：在所有“普通符号”里随机一个（排除 scatter / feature）
-            const normalIndices: number[] = [];
 
-            for (let i = 0; i < icons.length; i++) {
-                const name = icons[i].name.toLowerCase();
-                if (
-                    name.indexOf('scatter') === -1 &&
-                    name.indexOf('feature') === -1
-                ) {
-                    normalIndices.push(i);
+                if (targetIndex >= 0) {
+                    data.index = targetIndex;
+                    for (let i = 0; i < icons.length; i++) {
+                        icons[i].active = (i === data.index);
+                    }
                 }
-            }
+            } else {
+                // 非目标格子：在所有“普通符号”里随机一个（排除 scatter / feature）
+                const normalIndices: number[] = [];
 
-            if (normalIndices.length > 0) {
-                const rand = Math.floor(Math.random() * normalIndices.length);
-                const targetIndex = normalIndices[rand];
-
-                data.index = targetIndex;
                 for (let i = 0; i < icons.length; i++) {
-                    icons[i].active = (i === data.index);
+                    const name = icons[i].name.toLowerCase();
+                    if (
+                        name.indexOf('scatter') === -1 &&
+                        name.indexOf('feature') === -1
+                    ) {
+                        normalIndices.push(i);
+                    }
+                }
+
+                if (normalIndices.length > 0) {
+                    const rand = Math.floor(Math.random() * normalIndices.length);
+                    const targetIndex = normalIndices[rand];
+
+                    data.index = targetIndex;
+                    for (let i = 0; i < icons.length; i++) {
+                        icons[i].active = (i === data.index);
+                    }
                 }
             }
         }
     }
-}
 
+    /* ---------------- 结果高亮：scatter×3 + feature×1 呼吸动画 ---------------- */
+
+    private startResultHighlight() {
+        // 清理旧的（防止重复开启）
+        this.stopResultHighlight();
+
+        const targets: Node[] = [];
+        if (this.resultScatterCells) {
+            for (let i = 0; i < this.resultScatterCells.length; i++) {
+                const n = this.resultScatterCells[i];
+                if (n && targets.indexOf(n) === -1) {
+                    targets.push(n);
+                }
+            }
+        }
+        if (this.resultFeatureCells) {
+            for (let i = 0; i < this.resultFeatureCells.length; i++) {
+                const n = this.resultFeatureCells[i];
+                if (n && targets.indexOf(n) === -1) {
+                    targets.push(n);
+                }
+            }
+        }
+
+        for (let i = 0; i < targets.length; i++) {
+            const node = targets[i];
+            const origin = node.scale.clone();
+            const bigger = new Vec3(origin.x * 1.12, origin.y * 1.12, origin.z);
+
+            // TODO：如果以后要改成 Animation 组件 / Spine 播放，
+            // 可以直接在这里替换 tween 的实现。
+            const tw = tween(node)
+                .to(0.4, { scale: bigger })
+                .to(0.4, { scale: origin })
+                .union()
+                .repeatForever()
+                .start();
+
+            this.highlightInfos.push({
+                node: node,
+                tween: tw,
+                originalScale: origin
+            });
+        }
+    }
+
+    // 预留一个停止高亮的接口，后面你进 wheel feature 时可以调用
+    public stopResultHighlight() {
+        for (let i = 0; i < this.highlightInfos.length; i++) {
+            const info = this.highlightInfos[i];
+            if (info.tween) {
+                info.tween.stop();
+            }
+            if (info.node) {
+                info.node.setScale(info.originalScale);
+            }
+        }
+        this.highlightInfos.length = 0;
+    }
 
     onDestroy() {
         this.stopSpinButtonIdle();
         this.unschedule(this.reelSpinTick);
+        this.stopResultHighlight();
     }
 }
