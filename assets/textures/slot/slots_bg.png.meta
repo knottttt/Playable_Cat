@@ -11,7 +11,7 @@
     "6c48a": {
       "importer": "texture",
       "uuid": "e06fd518-b881-4c79-bb4f-066d6b82617c@6c48a",
-      "displayName": "slots_frame6_2",
+      "displayName": "slots_bg",
       "id": "6c48a",
       "name": "texture",
       "userData": {
@@ -35,7 +35,7 @@
     "f9941": {
       "importer": "sprite-frame",
       "uuid": "e06fd518-b881-4c79-bb4f-066d6b82617c@f9941",
-      "displayName": "slots_frame6_2",
+      "displayName": "slots_bg",
       "id": "f9941",
       "name": "spriteFrame",
       "userData": {
@@ -49,10 +49,10 @@
         "height": 930,
         "rawWidth": 1200,
         "rawHeight": 930,
-        "borderTop": 0,
-        "borderBottom": 0,
-        "borderLeft": 0,
-        "borderRight": 0,
+        "borderTop": 90,
+        "borderBottom": 402,
+        "borderLeft": 753,
+        "borderRight": 323,
         "packable": true,
         "pixelsToUnit": 100,
         "pivotX": 0.5,
