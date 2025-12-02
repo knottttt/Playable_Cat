@@ -110,7 +110,7 @@ export class FeatureFiresawController extends Component {
         if (this.modeRoot) this.modeRoot.active = false;
         if (this.scatterBtn) this.scatterBtn.active = false;
 
-        if (this.wheelArrow) {
+        if (this.wheelArrow && this.wheelArrow.isValid) {
             this.wheelArrow.eulerAngles = new Vec3(0, 0, 0);
         }
     }
@@ -214,21 +214,25 @@ export class FeatureFiresawController extends Component {
             .to(this.wheelSpinDuration, { angle: targetRaw }, {
                 easing: easeBezier_22_1_36_1,
                 onUpdate: () => {
-                    this.wheel.eulerAngles = new Vec3(
-                        euler.x,
-                        euler.y,
-                        this._wheelState.angle
-                    );
+                    if (this.wheel && this.wheel.isValid) {
+                        this.wheel.eulerAngles = new Vec3(
+                            euler.x,
+                            euler.y,
+                            this._wheelState.angle
+                        );
+                    }
                 },
             })
             .call(() => {
                 // tween 结束时强制写死在 targetRaw，保证停住
                 this._wheelState.angle = targetRaw;
-                this.wheel.eulerAngles = new Vec3(
-                    euler.x,
-                    euler.y,
-                    targetRaw
-                );
+                if (this.wheel && this.wheel.isValid) {
+                    this.wheel.eulerAngles = new Vec3(
+                        euler.x,
+                        euler.y,
+                        targetRaw
+                    );
+                }
 
                 this.onWheelSpinFinished();
             })
@@ -238,28 +242,33 @@ export class FeatureFiresawController extends Component {
     /* ============ Arrow 只做 0 ~ -12 度小幅摆动 ============ */
 
     private startArrowWobble() {
-        if (!this.wheelArrow) return;
+        if (!this.wheelArrow || !this.wheelArrow.isValid) return;
 
-        this.stopArrowWobble();
+        this.stopArrowWobble();          // 这里默认会重置指针角度
         this._arrowState.angle = 0;
-        this.wheelArrow.eulerAngles = new Vec3(0, 0, 0);
+
+        if (this.wheelArrow && this.wheelArrow.isValid) {
+            this.wheelArrow.eulerAngles = new Vec3(0, 0, 0);
+        }
 
         const playOne = () => {
-            if (!this._isWheelSpinning || !this.wheelArrow) return;
+            if (!this._isWheelSpinning || !this.wheelArrow || !this.wheelArrow.isValid) return;
 
-            const target = -Math.random() * 36;           // 0 ~ -12 度
+            const target = -Math.random() * 36;           // 0 ~ -36 度
             const dur = 0.12 + Math.random() * 0.08;      // 0.12~0.2 秒
 
             this._arrowWobbleTween = tween(this._arrowState)
                 .to(dur, { angle: target }, {
                     easing: easeBezier_22_1_36_1,
                     onUpdate: () => {
+                        if (!this.wheelArrow || !this.wheelArrow.isValid) return;
                         this.wheelArrow.eulerAngles = new Vec3(0, 0, this._arrowState.angle);
                     }
                 })
                 .to(dur, { angle: 0 }, {
                     easing: easeBezier_22_1_36_1,
                     onUpdate: () => {
+                        if (!this.wheelArrow || !this.wheelArrow.isValid) return;
                         this.wheelArrow.eulerAngles = new Vec3(0, 0, this._arrowState.angle);
                     }
                 })
@@ -272,21 +281,25 @@ export class FeatureFiresawController extends Component {
         playOne();
     }
 
-    private stopArrowWobble() {
+    /** 
+     * 停止指针摆动
+     * @param resetNodeEuler 是否顺便把指针角度重置为 0（销毁时就不要重置了，避免访问无效节点）
+     */
+    private stopArrowWobble(resetNodeEuler: boolean = true) {
         if (this._arrowWobbleTween) {
             this._arrowWobbleTween.stop();
             this._arrowWobbleTween = null;
         }
         this._arrowState.angle = 0;
 
-        if (this.wheelArrow) {
+        if (resetNodeEuler && this.wheelArrow && this.wheelArrow.isValid) {
             this.wheelArrow.eulerAngles = new Vec3(0, 0, 0);
         }
     }
 
     private onWheelSpinFinished() {
         this._isWheelSpinning = false;
-        this.stopArrowWobble();
+        this.stopArrowWobble(); // 这里还是会重置角度
         this.playModeFeature();
     }
 
@@ -330,10 +343,13 @@ export class FeatureFiresawController extends Component {
 
     onDestroy() {
         this._isWheelSpinning = false;
+
         if (this._wheelTween) {
             this._wheelTween.stop();
             this._wheelTween = null;
         }
-        this.stopArrowWobble();
+
+        // 销毁阶段只停止 tween，不再去改指针节点的欧拉角，避免 Vec3.set 访问到已释放的数据
+        this.stopArrowWobble(false);
     }
 }

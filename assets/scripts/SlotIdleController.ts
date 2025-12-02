@@ -55,7 +55,7 @@ export class SlotIdleController extends Component {
     featureDelay: number = 2.0;
 
     private spinTween: Tween<Node> = null;
-    private originalScale: Vec3 = new Vec3(1, 1, 1);
+private originalScale: Vec3 | null = null;  
     private isReelSpinning: boolean = false;
 
     private cells: CellData[] = [];
@@ -172,15 +172,24 @@ export class SlotIdleController extends Component {
             .start();
     }
 
-    private stopSpinButtonIdle() {
-        if (this.spinTween) {
-            this.spinTween.stop();
-            this.spinTween = null;
-        }
-        if (this.spinButton) {
-            this.spinButton.setScale(this.originalScale);
-        }
+    // 原来是：
+// private stopSpinButtonIdle() {
+    private stopSpinButtonIdle(resetScale: boolean = true) {
+    if (this.spinTween) {
+        this.spinTween.stop();
+        this.spinTween = null;
     }
+
+    // 只有在需要时才恢复缩放，并且要保证各种对象有效
+    if (
+        resetScale &&
+        this.spinButton &&
+        this.spinButton.isValid &&
+        this.originalScale
+    ) {
+        this.spinButton.setScale(this.originalScale);
+    }
+}
 
     /* 点击 Spin */
 
@@ -358,8 +367,10 @@ export class SlotIdleController extends Component {
     }
 
     onDestroy() {
+    try {
         this.stopSpinButtonIdle();
-        this.unschedule(this.reelSpinTick);
-        this.stopResultHighlight();
+    } catch (e) {
+        console.warn("[SlotIdleController] onDestroy skipped, node already destroyed");
+    }
     }
 }

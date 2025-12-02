@@ -153,8 +153,8 @@
     },
     "_lscale": {
       "__type__": "cc.Vec3",
-      "x": 1,
-      "y": 1,
+      "x": 0.505,
+      "y": 0.505,
       "z": 1
     },
     "_mobility": 0,
@@ -181,8 +181,8 @@
     },
     "_contentSize": {
       "__type__": "cc.Size",
-      "width": 667,
-      "height": 516.925
+      "width": 1400,
+      "height": 1024
     },
     "_anchorPoint": {
       "__type__": "cc.Vec2",
@@ -221,7 +221,7 @@
       "__uuid__": "e06fd518-b881-4c79-bb4f-066d6b82617c@f9941",
       "__expectedType__": "cc.SpriteFrame"
     },
-    "_type": 0,
+    "_type": 2,
     "_fillType": 0,
     "_sizeMode": 0,
     "_fillCenter": {
@@ -289,8 +289,8 @@
     },
     "_lscale": {
       "__type__": "cc.Vec3",
-      "x": -1,
-      "y": 1,
+      "x": -0.505,
+      "y": 0.505,
       "z": 1
     },
     "_mobility": 0,
@@ -317,8 +317,8 @@
     },
     "_contentSize": {
       "__type__": "cc.Size",
-      "width": 667,
-      "height": 516.925
+      "width": 1400,
+      "height": 1024
     },
     "_anchorPoint": {
       "__type__": "cc.Vec2",
@@ -329,7 +329,7 @@
   },
   {
     "__type__": "cc.CompPrefabInfo",
-    "fileId": "7fPzPRoVhPt4/a75c4q6y6"
+    "fileId": "9b1Pz/ZShLKLiFzSmObU04"
   },
   {
     "__type__": "cc.Sprite",
@@ -357,7 +357,7 @@
       "__uuid__": "e06fd518-b881-4c79-bb4f-066d6b82617c@f9941",
       "__expectedType__": "cc.SpriteFrame"
     },
-    "_type": 0,
+    "_type": 2,
     "_fillType": 0,
     "_sizeMode": 0,
     "_fillCenter": {
@@ -374,7 +374,7 @@
   },
   {
     "__type__": "cc.CompPrefabInfo",
-    "fileId": "c4PE0HzsBM3qU3h2mfKWAb"
+    "fileId": "b9PQ+cnpRAMoDgeK9ikIIJ"
   },
   {
     "__type__": "cc.PrefabInfo",
@@ -384,7 +384,7 @@
     "asset": {
       "__id__": 0
     },
-    "fileId": "8b4FMBfOVID7orLNo/R0v+",
+    "fileId": "fedp9jpYZPobt3s+ndGpUB",
     "instance": null,
     "targetOverrides": null,
     "nestedPrefabInstanceRoots": null
@@ -455,7 +455,7 @@
         "__id__": 139
       }
     ],
-    "_active": true,
+    "_active": false,
     "_components": [
       {
         "__id__": 169
