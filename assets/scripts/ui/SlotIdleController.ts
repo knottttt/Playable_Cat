@@ -2,7 +2,6 @@
 import { _decorator, Component, Node, tween, Vec3, UIOpacity, Tween } from 'cc';
 const { ccclass, property } = _decorator;
 
-// 每个格子的缓存数据
 type CellData = {
     cell: Node;
     icons: Node[];
@@ -12,27 +11,23 @@ type CellData = {
 @ccclass('SlotIdleController')
 export class SlotIdleController extends Component {
 
-    // slotPanel/slotLayout
     @property(Node)
     slotLayout: Node = null;
 
-    // slotPanel/blackMask
     @property(Node)
     blackMask: Node = null;
 
-    // MainScene 里的 SpinBtn
     @property(Node)
     spinButton: Node = null;
 
-    // 滚轴 spin 的持续时间（秒）
     @property
     reelSpinDuration: number = 1.5;
 
-    // 最终结果：哪些 cell 停成 scatter
+    // 最终：哪些 cell 要是 scatter（第一行的 1、2、3）
     @property([Node])
     resultScatterCells: Node[] = [];
 
-    // 最终结果：哪些 cell 停成 feature
+    // 最终：哪些 cell 要是 feature（第一行的 4）
     @property([Node])
     resultFeatureCells: Node[] = [];
 
@@ -44,18 +39,13 @@ export class SlotIdleController extends Component {
     private spinElapsed: number = 0;
 
     start() {
-        // 收集所有 cell_* 与其 icons
         this.collectCells();
-
-        // 待机：随机一帧
         this.randomizeIconsForIdle();
 
-        // 显示黑幕
         if (this.blackMask) {
             this.blackMask.active = true;
         }
 
-        // 按钮呼吸动画
         this.startSpinButtonIdle();
     }
 
@@ -89,12 +79,25 @@ export class SlotIdleController extends Component {
         const base = cell.getChildByName('base');
         if (!base) return;
 
-        const icons = base.children;
-        if (!icons || icons.length === 0) return;
+        const children = base.children;
+        if (!children || children.length === 0) return;
+
+        const icons: Node[] = [];
+        for (let i = 0; i < children.length; i++) {
+            const n = children[i];
+
+            // frame 不参与滚动
+            if (n.name === 'frame') {
+                continue;
+            }
+            icons.push(n);
+        }
+
+        if (icons.length === 0) return;
 
         const data: CellData = {
             cell: cell,
-            icons: icons.slice(), // 拷贝一份数组
+            icons: icons,
             index: 0
         };
 
@@ -161,22 +164,18 @@ export class SlotIdleController extends Component {
         }
     }
 
-    /* ---------------- 点击 Spin：按钮隐藏 + 黑幕淡出 + 滚轴 spin ---------------- */
+    /* ---------------- 点击 Spin ---------------- */
 
-    // 按钮 Click 事件绑定这个函数
     public onClickSpin() {
         if (this.isReelSpinning) return;
         this.isReelSpinning = true;
 
-        // 停掉按钮呼吸动画
         this.stopSpinButtonIdle();
 
-        // 👉 点击后按钮隐藏
         if (this.spinButton) {
             this.spinButton.active = false;
         }
 
-        // 黑幕淡出 → 开始滚轴 spin
         this.fadeOutBlackMaskAndSpin();
     }
 
@@ -192,7 +191,7 @@ export class SlotIdleController extends Component {
         }
 
         tween(op)
-            .to(0.4, { opacity: 0 })  // 0.4 秒淡出
+            .to(0.4, { opacity: 0 })
             .call(() => {
                 this.blackMask.active = false;
                 this.startReelSpin();
@@ -200,11 +199,11 @@ export class SlotIdleController extends Component {
             .start();
     }
 
-    /* ---------------- 滚轴逻辑：顺序转动 + 精准停结果 ---------------- */
+    /* ---------------- 滚轴逻辑 ---------------- */
 
     private startReelSpin() {
         this.spinElapsed = 0;
-        const stepInterval = 0.05; // 每 0.05 秒切一格
+        const stepInterval = 0.05;
 
         this.schedule(this.reelSpinTick, stepInterval);
     }
@@ -212,50 +211,41 @@ export class SlotIdleController extends Component {
     private reelSpinTick(dt: number) {
         this.spinElapsed += dt;
 
-        // 每一 tick 顺序前进一步
         this.stepIconsOnce();
 
         if (this.spinElapsed >= this.reelSpinDuration) {
             this.unschedule(this.reelSpinTick);
             this.isReelSpinning = false;
 
-            // 再小走一步
             this.stepIconsOnce();
 
-            // 👉 最终结果：指定 scatter / feature
+            // 最终结果：强制落位
             this.applyFinalResult();
         }
     }
 
-    // 最终停下来的结果：scatter / feature 强制落位
+    /* ---------------- 最终结果：只让第一行变 scatter/feature ---------------- */
+
     private applyFinalResult() {
-        for (let c = 0; c < this.cells.length; c++) {
-            const data = this.cells[c];
-            const cellNode = data.cell;
-            const icons = data.icons;
-            if (!icons.length) continue;
+    for (let c = 0; c < this.cells.length; c++) {
+        const data = this.cells[c];
+        const cellNode = data.cell;
+        const icons = data.icons;
+        if (!icons.length) continue;
 
-            let targetType = ""; // "scatter" | "feature" | ""
+        const isScatterCell =
+            this.resultScatterCells &&
+            this.resultScatterCells.indexOf(cellNode) !== -1;
 
-            // 看这个 cell 是否在 scatter 列表里
-            if (this.resultScatterCells && this.resultScatterCells.indexOf(cellNode) !== -1) {
-                targetType = "scatter";
-            }
+        const isFeatureCell =
+            this.resultFeatureCells &&
+            this.resultFeatureCells.indexOf(cellNode) !== -1;
 
-            // 看这个 cell 是否在 feature 列表里（如果同时配置，以 feature 优先）
-            if (this.resultFeatureCells && this.resultFeatureCells.indexOf(cellNode) !== -1) {
-                targetType = "feature";
-            }
-
-            if (targetType === "") {
-                // 没有特别指定，就保持当前 index 不动
-                continue;
-            }
-
+        if (isScatterCell || isFeatureCell) {
+            const targetType = isFeatureCell ? 'feature' : 'scatter';
             const lowerType = targetType.toLowerCase();
             let targetIndex = -1;
 
-            // 在 icons 中找到名字包含 scatter/feature 的那个
             for (let i = 0; i < icons.length; i++) {
                 const name = icons[i].name.toLowerCase();
                 if (name.indexOf(lowerType) !== -1) {
@@ -264,8 +254,30 @@ export class SlotIdleController extends Component {
                 }
             }
 
-            // 如果找到了对应 icon，就强制切到该图标
             if (targetIndex >= 0) {
+                data.index = targetIndex;
+                for (let i = 0; i < icons.length; i++) {
+                    icons[i].active = (i === data.index);
+                }
+            }
+        } else {
+            // 非目标格子：在所有“普通符号”里随机一个（排除 scatter / feature）
+            const normalIndices: number[] = [];
+
+            for (let i = 0; i < icons.length; i++) {
+                const name = icons[i].name.toLowerCase();
+                if (
+                    name.indexOf('scatter') === -1 &&
+                    name.indexOf('feature') === -1
+                ) {
+                    normalIndices.push(i);
+                }
+            }
+
+            if (normalIndices.length > 0) {
+                const rand = Math.floor(Math.random() * normalIndices.length);
+                const targetIndex = normalIndices[rand];
+
                 data.index = targetIndex;
                 for (let i = 0; i < icons.length; i++) {
                     icons[i].active = (i === data.index);
@@ -273,6 +285,8 @@ export class SlotIdleController extends Component {
             }
         }
     }
+}
+
 
     onDestroy() {
         this.stopSpinButtonIdle();
