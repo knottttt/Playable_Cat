@@ -5,6 +5,7 @@ import {
     Node,
     Animation,
     UIOpacity,
+    director, 
 } from 'cc';
 
 const { ccclass, property } = _decorator;
@@ -14,7 +15,7 @@ export class FxFireSaw extends Component {
 
     /**
      * 对应这一行 5 个格子的 frame0 节点
-    
+
      */
     @property([Node])
     frameAnimNodes: Node[] = [];
@@ -30,6 +31,9 @@ export class FxFireSaw extends Component {
     /** 调试：运行时在 Inspector 里修改，会立刻播放对应格子的黄框动画 */
     @property
     debugIndex: number = -1;
+    
+    @property
+    isLastRow: boolean = false;
 
     private _lastDebugIndex: number = -1;
 
@@ -133,13 +137,13 @@ export class FxFireSaw extends Component {
         // 3）开始播放黄框动画（从 0 帧起播）
         anim.play(clipName);
     }
-
-    /** 提供给 FxHouseGrid 使用：这一行锯子整体播放完的大致时长（秒） */
-    public getTotalDuration (): number {
-        const rowAnim = this.getComponent(Animation);
-        const clip = rowAnim?.defaultClip ?? rowAnim?.clips[0];
-        const clipDuration = clip ? clip.duration : 0;
-        // 加一点缓冲，避免拼接处有一帧空档
-        return this.startDelay + clipDuration + 0.1;
+    
+    public onRowAnimFinished () {
+        if (!this.isLastRow) {
+            return;
+        }
+        // 通知：所有 FireSaw 行都播完了
+        director.emit('FIRESAW_FINISHED');
+        console.log('[FxFireSaw] all rows finished, emit FIRESAW_FINISHED');
     }
 }

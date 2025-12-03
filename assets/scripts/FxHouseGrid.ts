@@ -3,38 +3,25 @@ import {
     _decorator,
     Component,
     Node,
-    TextAsset,
+    Label,
     UIOpacity,
     tween,
     Vec3,
-    Label,
-    sp,
+    TextAsset,
+    director,
 } from 'cc';
-import { FxFireSaw } from './FxFireSaw';
+import { sp } from 'cc';
 
 const { ccclass, property } = _decorator;
 
-type UnitType = 'M' | 'B';
-
-interface CellConfig {
-    value: number;
-    unit: UnitType;
-    grand?: boolean;
-}
-
 interface HouseConfig {
-    cols: number;
     rows: number;
-    cells: CellConfig[];
-}
-
-interface CellView {
-    root: Node;
-    houseSkel: sp.Skeleton | null;
-    bgSilver: Node | null;
-    bgGold: Node | null;
-    numLabel: Label | null;
-    grandNode: Node | null;
+    cols: number;
+    rewardNumbers: number[];   // 每个格子的数值（长度 >= rows * cols）
+    goldIndexList: number[];   // gold 格子的 index
+    grandIndexList?: number[]; // grand 图标的 index
+    startDelay?: number;       // 整体延迟（秒）
+    cellOffset?: number;       // 每个格子的偏移（秒）
 }
 
 @ccclass('FxHouseGrid')
@@ -43,245 +30,288 @@ export class FxHouseGrid extends Component {
     @property(Node)
     gridLayout: Node | null = null;
 
+    /** house_config.txt（已改成 txt 的那个） */
     @property(TextAsset)
     configAsset: TextAsset | null = null;
 
-    /** 是否等待 FireSaw 完成再开始 */
+    /** show 动画时长（秒） */
     @property
-    waitFireSaw: boolean = true;
+    showDuration: number = 0.8;
 
-    /** FireSaw 的根节点（包含所有 FxFireSaw 的父节点） */
-    @property(Node)
-    fireSawRoot: Node | null = null;
-
-    /** 格子依次播放的时间间隔（秒），按照 bonus_00, bonus_01, ... 的顺序偏移 */
+    /** destory 动画时长（秒） */
     @property
-    cellOffset: number = 0.15;
+    destroyDuration: number = 1.5;
 
-    /** destory 动画结束后，再延迟多少秒显示数字 */
+    /** grand 呼吸动画参数 */
     @property
-    numDelayAfterDestroy: number = 0.05;
+    grandBreathScale: number = 1.12;
 
-    private _config: HouseConfig | null = null;
-    private _cells: CellView[] = [];
+    @property
+    grandBreathTime: number = 0.35;
+
+    /** 调试：不等 FireSaw，直接在 start 播放一遍 */
+    @property
+    debugPlayOnStart: boolean = false;
+
+    private _cfg: HouseConfig | null = null;
+    private _goldSet: Set<number> = new Set();
+    private _grandSet: Set<number> = new Set();
 
     onLoad () {
-        this._scanGrid();
-        this._applyConfig();
+        this._loadConfigFromTxt();
+        this._initAllCellsVisual();
+
+        // 监听 FxFireSaw 发出来的事件
+        director.on('FIRESAW_FINISHED', this._onFireSawFinished, this);
     }
 
     start () {
-        if (this.waitFireSaw && this.fireSawRoot) {
-            const delay = this._calcFireSawEndTime();
-            console.log('[FxHouseGrid] wait fire saw, delay =', delay);
-            this.scheduleOnce(() => {
-                this._playAllCells();
-            }, delay);
-        } else {
+        if (this.debugPlayOnStart) {
             this._playAllCells();
         }
     }
 
-    //================  初始化 & 配置  ===================
+    onDestroy () {
+        director.off('FIRESAW_FINISHED', this._onFireSawFinished, this);
+    }
 
-    private _scanGrid () {
-        if (!this.gridLayout) {
-            this.gridLayout = this.node.getChildByName('gridLayout') ?? null;
-        }
-        if (!this.gridLayout) {
-            console.warn('[FxHouseGrid] gridLayout not assigned');
+    //======================
+    // 事件入口
+    //======================
+
+    /** 收到 FireSaw 完成事件 → 正式开始 house grid */
+    private _onFireSawFinished () {
+        console.log('[FxHouseGrid] receive FIRESAW_FINISHED, start grid');
+        this._playAllCells();
+    }
+
+    //======================
+    // 配置加载 & 初始化
+    //======================
+
+    private _loadConfigFromTxt () {
+        if (!this.configAsset) {
+            console.warn('[FxHouseGrid] configAsset 未设置');
             return;
         }
 
-        const children = this.gridLayout.children
-            .filter(n => n.name.startsWith('bonus_'))
-            .sort((a, b) => a.name.localeCompare(b.name));
+        try {
+            const json = JSON.parse(this.configAsset.text) as HouseConfig;
+            this._cfg = json;
+            this._goldSet = new Set(json.goldIndexList || []);
+            this._grandSet = new Set(json.grandIndexList || []);
+            console.log('[FxHouseGrid] config loaded:', json);
+        } catch (e) {
+            console.error('[FxHouseGrid] 解析 house_config 失败:', e);
+        }
+    }
 
-        this._cells.length = 0;
+    /** 初始化：所有格子背景透明、num / grand 隐藏 */
+    private _initAllCellsVisual () {
+        if (!this.gridLayout) return;
 
-        for (const bonus of children) {
-            const houseRoot = bonus.getChildByName('house');
-            const numRoot   = bonus.getChildByName('num');
+        for (const bonusNode of this.gridLayout.children) {
+            const houseRoot = bonusNode.getChildByName('house');
+            const numRoot   = bonusNode.getChildByName('num');
+            if (!houseRoot || !numRoot) continue;
 
-            const bgSilver  = houseRoot?.getChildByName('bg_silver') ?? null;
-            const bgGold    = houseRoot?.getChildByName('bg_gold') ?? null;
-            const houseSkel = houseRoot?.getComponent(sp.Skeleton) ?? null;
+            const bgSilver = houseRoot.getChildByName('bg_silver');
+            const bgGold   = houseRoot.getChildByName('bg_gold');
+            const spineNode = houseRoot.getChildByName('house');
+            const spine    = spineNode?.getComponent(sp.Skeleton) ?? null;
 
-            const labelNode = numRoot?.getChildByName('Label') ?? null;
-            const numLabel  = labelNode?.getComponent(Label) ?? null;
-
-            const grandNode = numRoot?.getChildByName('grand') ?? null;
-
-            // 默认全部隐藏
             if (bgSilver) {
-                const op = bgSilver.getComponent(UIOpacity) ?? bgSilver.addComponent(UIOpacity);
+                const op = this._ensureOpacity(bgSilver, 0);
                 op.opacity = 0;
+                bgSilver.active = false;
             }
             if (bgGold) {
-                const op = bgGold.getComponent(UIOpacity) ?? bgGold.addComponent(UIOpacity);
+                const op = this._ensureOpacity(bgGold, 0);
                 op.opacity = 0;
+                bgGold.active = false;
             }
-            if (numLabel) {
-                numLabel.node.active = false;
+
+            numRoot.active = false;
+            this._ensureOpacity(numRoot, 0);
+
+            const grandNode = numRoot.getChildByName('grand');
+            if (grandNode) {
+                grandNode.active = false;
+                this._ensureOpacity(grandNode, 0);
+                grandNode.setScale(new Vec3(1, 1, 1));
+            }
+
+            const labelNode = numRoot.getChildByName('Label');
+            const label     = labelNode?.getComponent(Label);
+            if (label) {
+                label.string = '';
+            }
+
+            if (spine) {
+                spine.clearTracks();
+            }
+        }
+    }
+
+    //======================
+    // 主流程：按配置播放整个 Grid
+    //======================
+
+    private _playAllCells () {
+        if (!this._cfg || !this.gridLayout) {
+            console.warn('[FxHouseGrid] _cfg 或 gridLayout 未就绪');
+            return;
+        }
+
+        const cfg = this._cfg;
+        const numbers = cfg.rewardNumbers || [];
+        const startDelay = cfg.startDelay ?? 0;
+        const cellOffset = cfg.cellOffset ?? 0.08;
+
+        const totalCells = this.gridLayout.children.length;
+
+        for (let index = 0; index < totalCells; index++) {
+            const bonusNode = this.gridLayout.children[index];
+            const reward = numbers[index] ?? 0;
+            const isGold  = this._goldSet.has(index);
+            const isGrand = this._grandSet.has(index);
+
+            const houseRoot = bonusNode.getChildByName('house');
+            const numRoot   = bonusNode.getChildByName('num');
+            if (!houseRoot || !numRoot) continue;
+
+            const spineNode = houseRoot.getChildByName('house');
+            const spine = spineNode?.getComponent(sp.Skeleton) ?? null;
+            if (!spine) continue;
+
+            const bgSilver = houseRoot.getChildByName('bg_silver');
+            const bgGold   = houseRoot.getChildByName('bg_gold');
+
+            const labelNode = numRoot.getChildByName('Label');
+            const label     = labelNode?.getComponent(Label) ?? null;
+            const grandNode = numRoot.getChildByName('grand') ?? null;
+
+            // 先决定这个格子的显示内容
+            if (label) {
+                if (!isGrand) {
+                    label.string = this._formatReward(reward);
+                } else {
+                    label.string = ''; // grand 只显示图标，不显示数字
+                }
             }
             if (grandNode) {
                 grandNode.active = false;
+                this._ensureOpacity(grandNode, 0);
+                tween(grandNode).stop();
+                grandNode.setScale(new Vec3(1, 1, 1));
             }
 
-            this._cells.push({
-                root: bonus,
-                houseSkel,
-                bgSilver,
-                bgGold,
-                numLabel,
-                grandNode,
-            });
-        }
+            // 空格子（既不是 grand 又没有数值）直接跳过
+            if (reward <= 0 && !isGrand) {
+                continue;
+            }
 
-        console.log('[FxHouseGrid] cells scanned =', this._cells.length);
-    }
+            const useGold = isGold || isGrand;
 
-    private _applyConfig () {
-        if (!this.configAsset) {
-            console.warn('[FxHouseGrid] configAsset not set');
-            return;
-        }
+            const showAnim    = useGold ? 'gold_show'    : 'silver_show';
+            const destroyAnim = useGold ? 'gold_destory' : 'sliver_destory';
+            const bgTarget    = useGold ? bgGold : bgSilver;
 
-        const raw = (this.configAsset.text ?? (this.configAsset as any).string) as string;
-        if (!raw) {
-            console.warn('[FxHouseGrid] config text empty');
-            return;
-        }
+            // 每个格子自己的时间偏移
+            const baseDelay = startDelay + cellOffset * index;
 
-        let cfg: HouseConfig;
-        try {
-            cfg = JSON.parse(raw) as HouseConfig;
-        } catch (e) {
-            console.error('[FxHouseGrid] JSON parse error:', e);
-            return;
-        }
-
-        if (!cfg.cells || !Array.isArray(cfg.cells)) {
-            console.warn('[FxHouseGrid] config.cells invalid');
-            return;
-        }
-
-        if (cfg.cols * cfg.rows !== cfg.cells.length) {
-            console.warn(
-                `[FxHouseGrid] config size mismatch, rows*cols=${cfg.rows * cfg.cols}, cells=${cfg.cells.length}`,
-            );
-        }
-
-        this._config = cfg;
-        console.log('[FxHouseGrid] config loaded, cells =', cfg.cells.length);
-    }
-
-    //================  FireSaw 同步  ===================
-
-    private _calcFireSawEndTime (): number {
-        if (!this.fireSawRoot) return 0;
-
-        const all = this.fireSawRoot.getComponentsInChildren(FxFireSaw);
-        if (!all.length) {
-            console.warn('[FxHouseGrid] no FxFireSaw found under fireSawRoot');
-            return 0;
-        }
-
-        let max = 0;
-        for (const saw of all) {
-            const t = saw.getTotalDuration();
-            if (t > max) max = t;
-        }
-        return max;
-    }
-
-    //================  播放逻辑  ===================
-
-    private _playAllCells () {
-        if (!this._config || !this._config.cells || !this._cells.length) {
-            console.warn('[FxHouseGrid] cannot play, config or cells missing');
-            return;
-        }
-
-        const total = Math.min(this._config.cells.length, this._cells.length);
-
-        for (let i = 0; i < total; i++) {
-            const cfg = this._config.cells[i];
-            const view = this._cells[i];
-            if (!cfg || !view) continue;
-            this._scheduleCell(i, cfg, view);
-        }
-    }
-
-    private _scheduleCell (index: number, cfg: CellConfig, view: CellView) {
-        if (!view.houseSkel) {
-            console.warn('[FxHouseGrid] cell has no skeleton, index =', index);
-            return;
-        }
-
-        const isGold = cfg.unit === 'B';
-        const showName    = isGold ? 'gold_show'   : 'silver_show';
-        const destroyName = isGold ? 'gold_destory' : 'sliver_destory'; // 注意：你的动画名就是 sliver_destory
-
-        const showDuration    = this._getAnimDuration(view.houseSkel, showName) || 0.8;
-        const destroyDuration = this._getAnimDuration(view.houseSkel, destroyName) || 1.5;
-
-        const startTime = index * this.cellOffset;
-
-        // 1）播放 show
-        this.scheduleOnce(() => {
-            view.houseSkel!.setAnimation(0, showName, false);
-        }, startTime);
-
-        // 2）接着播放 destroy，同时把背景淡入
-        this.scheduleOnce(() => {
-            view.houseSkel!.setAnimation(0, destroyName, false);
-
-            const bgNode = isGold ? view.bgGold : view.bgSilver;
-            if (bgNode) {
-                const op = bgNode.getComponent(UIOpacity) ?? bgNode.addComponent(UIOpacity);
+            // 把初始状态重置一下
+            if (bgSilver) {
+                const op = this._ensureOpacity(bgSilver, 0);
                 op.opacity = 0;
-                tween(op).to(destroyDuration, { opacity: 255 }).start();
+                bgSilver.active = false;
             }
+            if (bgGold) {
+                const op = this._ensureOpacity(bgGold, 0);
+                op.opacity = 0;
+                bgGold.active = false;
+            }
+            numRoot.active = false;
+            this._ensureOpacity(numRoot, 0);
 
-            // 3）destory 播完后再显示数字 & grand
+            // === 时间轴：baseDelay → show → destory → 显示 num / grand ===
+
             this.scheduleOnce(() => {
-                this._showNumber(cfg, view);
-            }, this.numDelayAfterDestroy);
+                // 1）播放 show → destory（通过 Spine 队列）
+                spine.clearTracks();
+                spine.timeScale = 1;
+                spine.setAnimation(0, showAnim, false);
+                // delay = 0 表示“紧接上一条动画播放完后”
+                spine.addAnimation(0, destroyAnim, false, 0);
 
-        }, startTime + showDuration);
-    }
+                // 2）destory 播放期间，让背景从 0 渐变到 255
+                if (bgTarget) {
+                    bgTarget.active = true;
+                    const op = this._ensureOpacity(bgTarget, 0);
+                    op.opacity = 0;
+                    tween(op).to(this.destroyDuration, { opacity: 255 }).delay(this.showDuration).start();
+                }
 
-    /** 从 skeleton 里查某个动画片段的时长 */
-    private _getAnimDuration (skeleton: sp.Skeleton, clipName: string): number {
-        const data = skeleton.skeletonData?.getRuntimeData();
-        const anim = data?.animations?.find(a => a.name === clipName);
-        return anim ? anim.duration : 0;
-    }
+                // 3）等 show + destory 完成后，再显示 num / grand
+                const totalDelay = this.showDuration + this.destroyDuration;
+                this.scheduleOnce(() => {
+                    // 显示 num
+                    numRoot.active = true;
+                    const numOp = this._ensureOpacity(numRoot, 0);
+                    tween(numOp).to(0.25, { opacity: 255 }).start();
 
-    private _showNumber (cfg: CellConfig, view: CellView) {
-        if (!view.numLabel) return;
+                    // 显示 grand + 呼吸动画
+                    if (isGrand && grandNode) {
+                        grandNode.active = true;
+                        const gOp = this._ensureOpacity(grandNode, 0);
+                        tween(gOp).to(0.25, { opacity: 255 }).start();
+                        this._startGrandBreath(grandNode);
+                    }
 
-        // 文字：你可以按自己需要格式化
-        view.numLabel.node.active = true;
-        view.numLabel.string = cfg.grand ? 'GRAND' : `${cfg.value}${cfg.unit}`;
+                }, totalDelay);
 
-        let op = view.numLabel.node.getComponent(UIOpacity);
-        if (!op) op = view.numLabel.node.addComponent(UIOpacity);
-        op.opacity = 0;
-        tween(op).to(0.2, { opacity: 255 }).start();
-
-        // Grand 图标 + 呼吸动画
-        if (cfg.grand && view.grandNode) {
-            view.grandNode.active = true;
-            const baseScale = view.grandNode.scale.clone();
-            tween(view.grandNode)
-                .repeatForever(
-                    tween()
-                        .to(0.4, { scale: new Vec3(baseScale.x * 1.1, baseScale.y * 1.1, baseScale.z) })
-                        .to(0.4, { scale: baseScale }),
-                )
-                .start();
+            }, baseDelay);
         }
+    }
+
+    //======================
+    // 小工具函数
+    //======================
+
+    /** 确保节点有 UIOpacity 组件，并返回它 */
+    private _ensureOpacity (node: Node, defaultValue: number): UIOpacity {
+        let op = node.getComponent(UIOpacity);
+        if (!op) {
+            op = node.addComponent(UIOpacity);
+        }
+        // defaultValue 只在初始化阶段用，这里不强行覆盖
+        return op;
+    }
+
+    /** grand 呼吸动画 */
+    private _startGrandBreath (node: Node) {
+        const base = node.scale.clone();
+        const up   = new Vec3(
+            base.x * this.grandBreathScale,
+            base.y * this.grandBreathScale,
+            base.z
+        );
+
+        tween(node)
+            .repeatForever(
+                tween()
+                    .to(this.grandBreathTime, { scale: up })
+                    .to(this.grandBreathTime, { scale: base }),
+            )
+            .start();
+    }
+
+    /** 数值格式：M 用 silver，B 用 gold（简化版） */
+    private _formatReward (value: number): string {
+        if (value >= 1000) {
+            // 这里按 B 处理（你可以根据需要再精细化）
+            return (value / 1000) + 'B';
+        }
+        return value + 'M';
     }
 }
