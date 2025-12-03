@@ -14,7 +14,7 @@ export class FxFireSaw extends Component {
 
     /**
      * 对应这一行 5 个格子的 frame0 节点
-     * （block/frame0，上面挂着 cc.Animation(ANM_frame) + UIOpacity）
+    
      */
     @property([Node])
     frameAnimNodes: Node[] = [];
@@ -132,5 +132,14 @@ export class FxFireSaw extends Component {
 
         // 3）开始播放黄框动画（从 0 帧起播）
         anim.play(clipName);
+    }
+
+    /** 提供给 FxHouseGrid 使用：这一行锯子整体播放完的大致时长（秒） */
+    public getTotalDuration (): number {
+        const rowAnim = this.getComponent(Animation);
+        const clip = rowAnim?.defaultClip ?? rowAnim?.clips[0];
+        const clipDuration = clip ? clip.duration : 0;
+        // 加一点缓冲，避免拼接处有一帧空档
+        return this.startDelay + clipDuration + 0.1;
     }
 }

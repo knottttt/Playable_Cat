@@ -1,0 +1,41 @@
+{
+  "cols": 5,
+  "rows": 6,
+  "cells": [
+    { "value": 460, "unit": "M" },
+    { "value": 150, "unit": "M" },
+    { "value": 268, "unit": "M" },
+    { "value": 810, "unit": "M" },
+    { "value": 150, "unit": "M" },
+
+    { "value": 150, "unit": "M" },
+    { "value": 460, "unit": "M" },
+    { "value": 150, "unit": "M" },
+    { "value": 20,  "unit": "B" },
+    { "value": 268, "unit": "M" },
+
+    { "value": 150, "unit": "M" },
+    { "value": 15,  "unit": "B" },
+    { "value": 150, "unit": "M" },
+    { "value": 3.2, "unit": "B" },
+    { "value": 2.6, "unit": "B" },
+
+    { "value": 150, "unit": "M" },
+    { "value": 3.2, "unit": "B" },
+    { "value": 0,   "unit": "M", "grand": true }, 
+    { "value": 810, "unit": "M" },
+    { "value": 2.6, "unit": "B" },
+
+    { "value": 3.2, "unit": "B" },
+    { "value": 460, "unit": "M" },
+    { "value": 7.5, "unit": "B" },
+    { "value": 2.6, "unit": "B" },
+    { "value": 150, "unit": "M" },
+
+    { "value": 268, "unit": "M" },
+    { "value": 3.2, "unit": "B" },
+    { "value": 150, "unit": "M" },
+    { "value": 150, "unit": "M" },
+    { "value": 460, "unit": "M" }
+  ]
+}
