@@ -9,8 +9,10 @@ import {
     Vec3,
     TextAsset,
     director,
+    Color,
 } from 'cc';
 import { sp } from 'cc';
+import { EndingPopup } from './EndingPopup';
 
 const { ccclass, property } = _decorator;
 
@@ -23,6 +25,7 @@ interface HouseConfig {
     startDelay?: number;       // 整体延迟（秒）
     cellOffset?: number;       // 每个格子的偏移（秒）
 }
+
 
 @ccclass('FxHouseGrid')
 export class FxHouseGrid extends Component {
@@ -48,6 +51,9 @@ export class FxHouseGrid extends Component {
 
     @property
     grandBreathTime: number = 0.35;
+
+    @property(EndingPopup)
+    endingPopup: EndingPopup | null = null;
 
     /** 调试：不等 FireSaw，直接在 start 播放一遍 */
     @property
@@ -158,121 +164,151 @@ export class FxHouseGrid extends Component {
     //======================
 
     private _playAllCells () {
-        if (!this._cfg || !this.gridLayout) {
-            console.warn('[FxHouseGrid] _cfg 或 gridLayout 未就绪');
-            return;
-        }
-
-        const cfg = this._cfg;
-        const numbers = cfg.rewardNumbers || [];
-        const startDelay = cfg.startDelay ?? 0;
-        const cellOffset = cfg.cellOffset ?? 0.08;
-
-        const totalCells = this.gridLayout.children.length;
-
-        for (let index = 0; index < totalCells; index++) {
-            const bonusNode = this.gridLayout.children[index];
-            const reward = numbers[index] ?? 0;
-            const isGold  = this._goldSet.has(index);
-            const isGrand = this._grandSet.has(index);
-
-            const houseRoot = bonusNode.getChildByName('house');
-            const numRoot   = bonusNode.getChildByName('num');
-            if (!houseRoot || !numRoot) continue;
-
-            const spineNode = houseRoot.getChildByName('house');
-            const spine = spineNode?.getComponent(sp.Skeleton) ?? null;
-            if (!spine) continue;
-
-            const bgSilver = houseRoot.getChildByName('bg_silver');
-            const bgGold   = houseRoot.getChildByName('bg_gold');
-
-            const labelNode = numRoot.getChildByName('Label');
-            const label     = labelNode?.getComponent(Label) ?? null;
-            const grandNode = numRoot.getChildByName('grand') ?? null;
-
-            // 先决定这个格子的显示内容
-            if (label) {
-                if (!isGrand) {
-                    label.string = this._formatReward(reward);
-                } else {
-                    label.string = ''; // grand 只显示图标，不显示数字
-                }
-            }
-            if (grandNode) {
-                grandNode.active = false;
-                this._ensureOpacity(grandNode, 0);
-                tween(grandNode).stop();
-                grandNode.setScale(new Vec3(1, 1, 1));
-            }
-
-            // 空格子（既不是 grand 又没有数值）直接跳过
-            if (reward <= 0 && !isGrand) {
-                continue;
-            }
-
-            const useGold = isGold || isGrand;
-
-            const showAnim    = useGold ? 'gold_show'    : 'silver_show';
-            const destroyAnim = useGold ? 'gold_destory' : 'sliver_destory';
-            const bgTarget    = useGold ? bgGold : bgSilver;
-
-            // 每个格子自己的时间偏移
-            const baseDelay = startDelay + cellOffset * index;
-
-            // 把初始状态重置一下
-            if (bgSilver) {
-                const op = this._ensureOpacity(bgSilver, 0);
-                op.opacity = 0;
-                bgSilver.active = false;
-            }
-            if (bgGold) {
-                const op = this._ensureOpacity(bgGold, 0);
-                op.opacity = 0;
-                bgGold.active = false;
-            }
-            numRoot.active = false;
-            this._ensureOpacity(numRoot, 0);
-
-            // === 时间轴：baseDelay → show → destory → 显示 num / grand ===
-
-            this.scheduleOnce(() => {
-                // 1）播放 show → destory（通过 Spine 队列）
-                spine.clearTracks();
-                spine.timeScale = 1;
-                spine.setAnimation(0, showAnim, false);
-                // delay = 0 表示“紧接上一条动画播放完后”
-                spine.addAnimation(0, destroyAnim, false, 0);
-
-                // 2）destory 播放期间，让背景从 0 渐变到 255
-                if (bgTarget) {
-                    bgTarget.active = true;
-                    const op = this._ensureOpacity(bgTarget, 0);
-                    op.opacity = 0;
-                    tween(op).to(this.destroyDuration, { opacity: 255 }).delay(this.showDuration).start();
-                }
-
-                // 3）等 show + destory 完成后，再显示 num / grand
-                const totalDelay = this.showDuration + this.destroyDuration;
-                this.scheduleOnce(() => {
-                    // 显示 num
-                    numRoot.active = true;
-                    const numOp = this._ensureOpacity(numRoot, 0);
-                    tween(numOp).to(0.25, { opacity: 255 }).start();
-
-                    // 显示 grand + 呼吸动画
-                    if (isGrand && grandNode) {
-                        grandNode.active = true;
-                        const gOp = this._ensureOpacity(grandNode, 0);
-                        tween(gOp).to(0.25, { opacity: 255 }).start();
-                        this._startGrandBreath(grandNode);
-                    }
-
-                }, totalDelay);
-
-            }, baseDelay);
-        }
+    if (!this._cfg || !this.gridLayout) {
+        console.warn('[FxHouseGrid] _cfg 或 gridLayout 未就绪');
+        return;
     }
+
+    const cfg = this._cfg;
+    const numbers = cfg.rewardNumbers || [];
+    const startDelay = cfg.startDelay ?? 0;
+    const cellOffset = cfg.cellOffset ?? 0.08;
+
+    const totalCells = this.gridLayout.children.length;
+
+    for (let index = 0; index < totalCells; index++) {
+        const bonusNode = this.gridLayout.children[index];
+        const reward = numbers[index] ?? 0;
+        const isGold  = this._goldSet.has(index);
+        const isGrand = this._grandSet.has(index);
+
+        const houseRoot = bonusNode.getChildByName('house');
+        const numRoot   = bonusNode.getChildByName('num');
+        if (!houseRoot || !numRoot) continue;
+
+        const spineNode = houseRoot.getChildByName('house');
+        const spine = spineNode?.getComponent(sp.Skeleton) ?? null;
+        if (!spine) continue;
+
+        const bgSilver = houseRoot.getChildByName('bg_silver');
+        const bgGold   = houseRoot.getChildByName('bg_gold');
+
+        const labelNode = numRoot.getChildByName('Label');
+        const label     = labelNode?.getComponent(Label) ?? null;
+        const grandNode = numRoot.getChildByName('grand') ?? null;
+
+        // 先决定这个格子的显示内容
+        if (label) {
+            if (!isGrand) {
+                label.string = this._formatReward(reward);
+            } else {
+                label.string = ''; // grand 只显示图标，不显示数字
+            }
+        }
+        if (grandNode) {
+            grandNode.active = false;
+            this._ensureOpacity(grandNode, 0);
+            tween(grandNode).stop();
+            grandNode.setScale(new Vec3(1, 1, 1));
+        }
+
+        // 空格子（既不是 grand 又没有数值）直接跳过
+        if (reward <= 0 && !isGrand) {
+            continue;
+        }
+
+        const useGold = isGold || isGrand;
+
+        const showAnim    = useGold ? 'gold_show'    : 'silver_show';
+        const destroyAnim = useGold ? 'gold_destory' : 'sliver_destory';
+        const bgTarget    = useGold ? bgGold : bgSilver;
+
+        // 每个格子自己的时间偏移
+        const baseDelay = startDelay + cellOffset * index;
+
+        // 把初始状态重置一下
+        if (bgSilver) {
+            const op = this._ensureOpacity(bgSilver, 0);
+            op.opacity = 0;
+            bgSilver.active = false;
+        }
+        if (bgGold) {
+            const op = this._ensureOpacity(bgGold, 0);
+            op.opacity = 0;
+            bgGold.active = false;
+        }
+        numRoot.active = false;
+        this._ensureOpacity(numRoot, 0);
+
+        // === 时间轴：baseDelay → show → destory → 显示 num / grand ===
+        this.scheduleOnce(() => {
+
+            // 1）播放 show → destory（通过 Spine 队列）
+            spine.clearTracks();
+            spine.timeScale = 1;
+            spine.setAnimation(0, showAnim, false);
+            spine.addAnimation(0, destroyAnim, false, 0);
+
+            // 2）destory 播放期间，让背景从 0 渐变到 255
+            if (bgTarget) {
+                bgTarget.active = true;
+                const op = this._ensureOpacity(bgTarget, 0);
+                op.opacity = 0;
+                tween(op)
+                    .delay(this.showDuration)
+                    .to(this.destroyDuration, { opacity: 255 })
+                    .start();
+            }
+
+            // 3）等 show + destory 完成后，再显示 num / grand
+            const totalDelay = this.showDuration + this.destroyDuration;
+            this.scheduleOnce(() => {
+                // 显示 num
+                numRoot.active = true;
+                const numOp = this._ensureOpacity(numRoot, 0);
+
+                // 设置金银颜色（注意这里我用的是 RGBA，不是 '#xxxxxx'）
+                if (label) {
+                    if (isGold) {
+                        // #fcd817
+                        label.color = new Color(252, 216, 23, 255);
+                    } else {
+                        // #f3f9ff 你可以改成你想要的银色
+                        label.color = new Color(243, 249, 255, 255);
+                    }
+                }
+
+                // 初始缩放
+                numRoot.setScale(0.85, 0.85, 1);
+
+                // 缩放动画
+                tween(numRoot)
+                    .to(0.25, { scale: new Vec3(1, 1, 1) }, { easing: 'quadOut' })
+                    .start();
+
+                // 透明度动画
+                tween(numOp)
+                    .to(0.25, { opacity: 255 })
+                    .start();
+
+                // 显示 grand + 呼吸动画
+                if (isGrand && grandNode) {
+                    grandNode.active = true;
+                    const gOp = this._ensureOpacity(grandNode, 0);
+                    tween(gOp).to(1.5, { opacity: 255 }).start();
+                    this._startGrandBreath(grandNode);
+
+                    // ★ Grand 出现后 2 秒弹出 EndingPopup
+                    if (this.endingPopup) {
+                        this.endingPopup.showAfterGrand(2);
+                    }
+                }
+
+            }, totalDelay);
+
+        }, baseDelay);
+    }
+}
 
     //======================
     // 小工具函数

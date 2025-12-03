@@ -1,0 +1,20 @@
+
+award_epicwin_03.png
+size: 256,128
+format: RGBA8888
+filter: Linear,Linear
+repeat: none
+sanse01
+  rotate: false
+  xy: 3, 3
+  size: 116, 116
+  orig: 116, 116
+  offset: 0, 0
+  index: -1
+ssg01
+  rotate: true
+  xy: 122, 22
+  size: 97, 90
+  orig: 107, 100
+  offset: 5, 7
+  index: -1

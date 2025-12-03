@@ -1,0 +1,48 @@
+
+award_epicwin_02.png
+size: 1024,512
+format: RGBA8888
+filter: Linear,Linear
+repeat: none
+lamp-01
+  rotate: false
+  xy: 895, 124
+  size: 20, 19
+  orig: 23, 23
+  offset: 1, 2
+  index: -1
+lamp-02
+  rotate: false
+  xy: 3, 30
+  size: 30, 31
+  orig: 32, 32
+  offset: 1, 1
+  index: -1
+lamp-box01
+  rotate: false
+  xy: 541, 146
+  size: 465, 285
+  orig: 469, 289
+  offset: 2, 1
+  index: -1
+lamp-box02
+  rotate: false
+  xy: 3, 190
+  size: 535, 241
+  orig: 539, 301
+  offset: 2, 58
+  index: -1
+mega
+  rotate: false
+  xy: 272, 3
+  size: 620, 140
+  orig: 622, 142
+  offset: 1, 1
+  index: -1
+win
+  rotate: false
+  xy: 3, 64
+  size: 266, 123
+  orig: 269, 127
+  offset: 2, 2
+  index: -1
