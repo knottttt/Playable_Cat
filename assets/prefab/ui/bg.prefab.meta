@@ -2,12 +2,12 @@
   "ver": "1.1.50",
   "importer": "prefab",
   "imported": true,
-  "uuid": "5098e60a-5202-482e-8398-96bb4815485b",
+  "uuid": "f733a464-5b51-4715-a9dc-7b83ab997f86",
   "files": [
     ".json"
   ],
   "subMetas": {},
   "userData": {
-    "syncNodeName": "slotPanel"
+    "syncNodeName": "bg"
   }
 }
