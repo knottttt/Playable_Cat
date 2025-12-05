@@ -13,6 +13,7 @@ import {
 } from 'cc';
 import { sp } from 'cc';
 import { EndingPopup } from './EndingPopup';
+import { AudioManager } from './core/AudioManager';   // 🔹 新增：引入音频管理器
 
 const { ccclass, property } = _decorator;
 
@@ -64,6 +65,12 @@ export class FxHouseGrid extends Component {
     })
     useFireSawCellTrigger: boolean = true;
 
+    /** 🔊 每个格子「盖房子」时播放的音效路径（resources/audio/sfx_frame） */
+    @property({
+        tooltip: 'resources 目录下的音效路径，例如：audio/sfx_frame'
+    })
+    FrameSfxPath: string = 'audio/sfx_frame';
+
     private _cfg: HouseConfig | null = null;
     private _goldSet: Set<number> = new Set();
     private _grandSet: Set<number> = new Set();
@@ -111,7 +118,6 @@ export class FxHouseGrid extends Component {
         }
         const cols = this._cfg.cols || 0;
         const index = row * cols + col;
-        // console.log('[FxHouseGrid] cell triggered row=', row, 'col=', col, 'index=', index, 'delay=', extraDelay);
 
         this._playOneCellWithBaseDelay(index, extraDelay);
     }
@@ -206,7 +212,7 @@ export class FxHouseGrid extends Component {
         }
     }
 
-    /** 🔹 把“单个格子完整播放逻辑”抽出来，baseDelay 由外部决定 */
+    /** 🔹 单个格子完整播放逻辑，baseDelay 由外部决定 */
     private _playOneCellWithBaseDelay (index: number, baseDelay: number) {
         if (!this._cfg || !this.gridLayout) return;
 
@@ -281,6 +287,11 @@ export class FxHouseGrid extends Component {
         // === 时间轴：baseDelay → show → destory → 显示 num / grand ===
         this.scheduleOnce(() => {
 
+            // 🔊 每个格子开始“盖房子”时 播一次 sfx_frame
+            if (AudioManager.instance && this.FrameSfxPath) {
+                AudioManager.instance.playOneShot(this.FrameSfxPath,0.6);
+            }
+
             // 1）播放 show → destory（通过 Spine 队列）
             spine.clearTracks();
             spine.timeScale = 1;
@@ -335,6 +346,7 @@ export class FxHouseGrid extends Component {
                     const gOp = this._ensureOpacity(grandNode, 0);
                     tween(gOp).to(1.5, { opacity: 255 }).start();
                     this._startGrandBreath(grandNode);
+                    AudioManager.instance?.playOneShot('audio/sfx_house_boom', 0.6);
 
                     // ★ Grand 出现后 2 秒弹出 EndingPopup
                     if (this.endingPopup) {

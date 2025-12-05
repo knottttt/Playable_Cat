@@ -7,6 +7,7 @@ import {
     UIOpacity,
     director,
 } from 'cc';
+import { AudioManager } from './core/AudioManager';
 
 const { ccclass, property } = _decorator;
 
@@ -77,6 +78,13 @@ export class FxFireSaw extends Component {
                 return;
             }
             rowAnim.play(clip.name);
+            
+            for (let i = 0; i < 8; i++) {
+            this.scheduleOnce(() => {
+                AudioManager.instance?.playOneShot('audio/sfx_saw_move', 0.6);
+                }, i * 0.2); 
+            }
+
         }, this.startDelay);
     }
 

@@ -75,7 +75,7 @@ export class SlotIdleController extends Component {
     start() {
         this.collectCells();
         this.randomizeIconsForIdle();
-        AudioManager.instance?.playBgm('audio/main_bgm', 0.8);
+        AudioManager.instance?.playBgm('audio/main_bgm', 0.6);
 
         // 开局主黑幕盖在转轴上
         if (this.blackMask) {
@@ -227,8 +227,6 @@ export class SlotIdleController extends Component {
         if (this.isReelSpinning) return;
         this.isReelSpinning = true;
 
-        AudioManager.instance?.playOneShot('audio/sfx_spin');
-
         this.stopSpinButtonIdle();
 
         if (this.spinButton) {
@@ -252,6 +250,13 @@ export class SlotIdleController extends Component {
             .call(() => {
                 this.blackMask.active = false;
                 this.startReelSpin();
+                
+                for (let i = 0; i < 24; i++) {
+        this.scheduleOnce(() => {
+            AudioManager.instance?.playOneShot('audio/sfx_slot', 1.0);
+        }, i * 0.08); 
+    }
+
             })
             .start();
     }
@@ -277,6 +282,7 @@ export class SlotIdleController extends Component {
 
             // ✳️ 开始结果高亮（呼吸）
             this.startResultHighlight();
+            AudioManager.instance?.playOneShot('audio/sfx_trigger', 1)
 
             // ✳️ 等待 featureDelay 秒：停止 cell 呼吸 → 渐显多个 blackMask → 进入 wheelOnly
             if (!this.hasTriggeredFeature && this.featureController) {

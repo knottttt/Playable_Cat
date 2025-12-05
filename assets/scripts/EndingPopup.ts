@@ -2,6 +2,7 @@
 import { _decorator, Component, Node, sp, Label, tween, Vec3, Tween } from 'cc';
 const { ccclass, property } = _decorator;
 import { TapHintManager } from './TapHintManager';
+import { AudioManager } from './core/AudioManager';
 
 @ccclass('EndingPopup')
 export class EndingPopup extends Component {
@@ -76,6 +77,8 @@ export class EndingPopup extends Component {
             console.warn('[EndingPopup] excellentwin 节点未找到');
             return;
         }
+        AudioManager.instance?.playOneShot('audio/sfx_end_win', 1.0);
+        AudioManager.instance?.playOneShot('audio/sfx_coin', 0.6);
 
         // 播 Spine birth → loop
         for (const child of root.children) {

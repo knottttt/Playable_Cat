@@ -12,6 +12,7 @@ import {
 } from 'cc';
 
 import { TapHintManager } from './TapHintManager';
+import { AudioManager } from './core/AudioManager';
 
 const { ccclass, property } = _decorator;
 
@@ -261,6 +262,14 @@ export class FeatureFiresawController extends Component {
             this.onWheelSpinFinished();
             return;
         }
+
+        for (let i = 0; i < 21; i++) {
+        this.scheduleOnce(() => {
+            AudioManager.instance?.playOneShot('audio/sfx_spin', 1.0);
+        }, i * 0.08); 
+    }
+
+
         if (this._isWheelSpinning) return;
         this._isWheelSpinning = true;
 
@@ -456,6 +465,7 @@ export class FeatureFiresawController extends Component {
     private playModeFeature() {
         if (this.featurePopup) this.featurePopup.active = true;
         if (this.scatterBtn) this.scatterBtn.active = true;
+
         // 切换到 feature 时再隐藏 alarm
         if (this.alarm) {
             this.alarm.active = false;
@@ -476,7 +486,16 @@ export class FeatureFiresawController extends Component {
 
         anim.once(Animation.EventType.FINISHED, this.onModeFinished, this);
         anim.play(this.modeAnimationName);
-    }
+
+        for (let i = 0; i < 3; i++) {
+                this.scheduleOnce(() => {
+                    
+                    AudioManager.instance?.playOneShot('audio/sfx_saw_show', 0.6);
+                    }, i * 2); 
+                }
+                    
+        
+            }
 
     private onModeFinished() {
     if (this.scatterBtn) {
