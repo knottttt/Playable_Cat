@@ -11,7 +11,7 @@ import {
 } from 'cc';
 import { FeatureFiresawController } from './FeatureFiresawController';
 import { TapHintManager } from './TapHintManager';
-
+import { AudioManager } from '../scripts/core/AudioManager'; 
 
 const { ccclass, property } = _decorator;
 
@@ -75,6 +75,7 @@ export class SlotIdleController extends Component {
     start() {
         this.collectCells();
         this.randomizeIconsForIdle();
+        AudioManager.instance?.playBgm('audio/main_bgm', 0.8);
 
         // 开局主黑幕盖在转轴上
         if (this.blackMask) {
@@ -225,6 +226,8 @@ export class SlotIdleController extends Component {
     public onClickSpin() {
         if (this.isReelSpinning) return;
         this.isReelSpinning = true;
+
+        AudioManager.instance?.playOneShot('audio/sfx_spin');
 
         this.stopSpinButtonIdle();
 

@@ -78,9 +78,9 @@ export class FeatureFiresawController extends Component {
     @property(Node)
     public modeRoot: Node = null;
 
-    /** 当前 feature 模式要播放的动画名（默认 ANM_feature_firesaw） */
+    /** 当前 feature 模式要播放的动画名（默认 ANM_ScatterBtn） */
     @property
-    public modeAnimationName: string = 'ANM_feature_firesaw';
+    public modeAnimationName: string = 'ANM_ScatterBtn';
 
     /** 最后出现，让玩家点击进入 Scatter0 的按钮 */
     @property(Node)
@@ -455,7 +455,7 @@ export class FeatureFiresawController extends Component {
 
     private playModeFeature() {
         if (this.featurePopup) this.featurePopup.active = true;
-
+        if (this.scatterBtn) this.scatterBtn.active = true;
         // 切换到 feature 时再隐藏 alarm
         if (this.alarm) {
             this.alarm.active = false;
@@ -487,7 +487,7 @@ export class FeatureFiresawController extends Component {
             if (TapHintManager.instance && this.scatterBtn && this.scatterBtn.isValid) {
                 TapHintManager.instance.showTap(
                     this.scatterBtn,
-                    new Vec3(0, -60, 0),   // 按钮上方 80
+                    new Vec3(0, -90, 0),   // 按钮上方 80
                     this.scatterBtn        // 点击 scatterBtn 后自动隐藏
                 );
             }
@@ -512,4 +512,4 @@ export class FeatureFiresawController extends Component {
         // 销毁阶段只停止 tween，不再去改指针节点的欧拉角，避免 Vec3.set 访问到已释放的数据
         this.stopArrowWobble(false);
     }
-}
+} 
