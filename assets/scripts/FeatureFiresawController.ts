@@ -11,6 +11,8 @@ import {
     director,
 } from 'cc';
 
+import { TapHintManager } from './TapHintManager';
+
 const { ccclass, property } = _decorator;
 
 /** 近似 cubic-bezier(.22,1,.36,1) 的 easing 函数 */
@@ -44,9 +46,17 @@ export class FeatureFiresawController extends Component {
     @property(Node)
     public blackMask: Node = null;
 
-    /** 上方大轮盘 */
+    /** 上方大轮盘本体（只负责旋转） */
     @property(Node)
     public wheel: Node = null;
+
+    /** 轮盘整体的 panel（需要上移 + 提到 slotPanel 前面） */
+    @property(Node)
+    public wheelPanel: Node = null;
+
+    /** 下面的 slotPanel（用于计算层级：wheelPanel 放在它前面） */
+    @property(Node)
+    public slotPanel: Node = null;
 
     /** 轮盘上方指针（只做 0 ~ -12 度摆动，不跟着盘子转） */
     @property(Node)
@@ -76,6 +86,10 @@ export class FeatureFiresawController extends Component {
     @property(Node)
     public scatterBtn: Node = null;
 
+    /** 转动完成后淡入的 mask（wheelpanel/wheel/wheel/wheel_mask） */
+    @property(Node)
+    public wheelMask: Node = null;
+
     /** wheel 旋转时间（秒） */
     @property
     public wheelSpinDuration: number = 2.0;
@@ -83,6 +97,22 @@ export class FeatureFiresawController extends Component {
     /** 旋转额外圈数（例如 3 = 多转 3 圈再停） */
     @property
     public wheelExtraRounds: number = 3;
+
+    /** wheelPanel 在开始转动前上移的距离（Y 方向） */
+    @property
+    public wheelPanelMoveUpDistance: number = 100;
+
+    /** wheelPanel 上移动画时间 */
+    @property
+    public wheelPanelMoveUpDuration: number = 0.2;
+
+    /** wheelMask 从 0 → 1（0 → 255）的淡入时间 */
+    @property
+    public wheelMaskFadeDuration: number = 0.3;
+
+    /** wheelMask 在轮盘停止后延迟多久再淡入（秒），可在 Inspector 填 2 */
+    @property
+    public wheelMaskDelay: number = 0.0;
 
     /** wheel 停下时的目标角度集合（单位：度，绝对角度） */
     private _targetAngles: number[] = [30, 180];
@@ -104,6 +134,9 @@ export class FeatureFiresawController extends Component {
     @property(Component)
     public wheelIdleController: Component | null = null;
 
+    /** 记录 wheelPanel 的初始位置，避免多次上移叠加 */
+    private _wheelPanelOriginPos: Vec3 | null = null;
+
     start() {
         if (this.featurePopup) this.featurePopup.active = false;
         if (this.alarm) this.alarm.active = false;
@@ -113,9 +146,21 @@ export class FeatureFiresawController extends Component {
         if (this.wheelArrow && this.wheelArrow.isValid) {
             this.wheelArrow.eulerAngles = new Vec3(0, 0, 0);
         }
+
+        if (this.wheelPanel && this.wheelPanel.isValid) {
+            this._wheelPanelOriginPos = this.wheelPanel.position.clone();
+        }
+
+        // 初始化 wheelMask：不显示，透明度 0
+        if (this.wheelMask && this.wheelMask.isValid) {
+            let op = this.wheelMask.getComponent(UIOpacity);
+            if (!op) op = this.wheelMask.addComponent(UIOpacity);
+            op.opacity = 0;
+            this.wheelMask.active = false;
+        }
     }
 
-    /* ============ 对外入口：开始当前 feature mode ============ */
+    /* ============ 对外入口：开始当前 feature mode（带警铃） ============ */
 
     public startWheelFeature() {
         // 0）先停掉 wheel 上所有 tween（包括 WheelController 做的待机旋转）
@@ -143,6 +188,41 @@ export class FeatureFiresawController extends Component {
 
         // 播 alarm 动画（但不隐藏 alarm）
         this.playAlarmIntro();
+    }
+
+    /**
+     * 对外入口：不播放警铃，直接显示轮盘并开始旋转
+     */
+    public startWheelOnly() {
+        // 0）先停掉 wheel 上所有 tween（包括待机旋转）
+        if (this.wheel) {
+            Tween.stopAllByTarget(this.wheel);
+        }
+        if (this.wheelIdleController) {
+            this.wheelIdleController.enabled = false;
+        }
+
+        // 1）黑幕拉起来（和有警铃时保持一致）
+        if (this.blackMask) {
+            this.blackMask.active = true;
+            let op = this.blackMask.getComponent(UIOpacity);
+            if (!op) op = this.blackMask.addComponent(UIOpacity);
+            op.opacity = 200;
+        }
+
+        // 2）直接打开轮盘界面，但不显示 alarm
+        if (this.featurePopup) this.featurePopup.active = true;
+        if (this.alarm) this.alarm.active = false;
+        if (this.modeRoot) this.modeRoot.active = false;
+        if (this.scatterBtn) this.scatterBtn.active = false;
+
+        // 3）指针角度归零
+        if (this.wheelArrow && this.wheelArrow.isValid) {
+            this.wheelArrow.eulerAngles = new Vec3(0, 0, 0);
+        }
+
+        // 4）直接开始轮盘旋转（内部会先上移 + 提层级）
+        this.startWheelSpin();
     }
 
     /* ============ Alarm 呼吸动画 + 停留时间 ============ */
@@ -207,34 +287,80 @@ export class FeatureFiresawController extends Component {
 
         this._wheelState.angle = startRaw;
 
-        // 开始指针摆动
-        this.startArrowWobble();
+        // 把「上移 + 提层级」和「开始旋转」串起来
+        this.moveWheelPanelBeforeSpin(() => {
+            // 开始指针摆动
+            this.startArrowWobble();
 
-        this._wheelTween = tween(this._wheelState)
-            .to(this.wheelSpinDuration, { angle: targetRaw }, {
-                easing: easeBezier_22_1_36_1,
-                onUpdate: () => {
+            this._wheelTween = tween(this._wheelState)
+                .to(this.wheelSpinDuration, { angle: targetRaw }, {
+                    easing: easeBezier_22_1_36_1,
+                    onUpdate: () => {
+                        if (this.wheel && this.wheel.isValid) {
+                            this.wheel.eulerAngles = new Vec3(
+                                euler.x,
+                                euler.y,
+                                this._wheelState.angle
+                            );
+                        }
+                    },
+                })
+                .call(() => {
+                    // tween 结束时强制写死在 targetRaw，保证停住
+                    this._wheelState.angle = targetRaw;
                     if (this.wheel && this.wheel.isValid) {
                         this.wheel.eulerAngles = new Vec3(
                             euler.x,
                             euler.y,
-                            this._wheelState.angle
+                            targetRaw
                         );
                     }
-                },
-            })
-            .call(() => {
-                // tween 结束时强制写死在 targetRaw，保证停住
-                this._wheelState.angle = targetRaw;
-                if (this.wheel && this.wheel.isValid) {
-                    this.wheel.eulerAngles = new Vec3(
-                        euler.x,
-                        euler.y,
-                        targetRaw
-                    );
-                }
 
-                this.onWheelSpinFinished();
+                    this.onWheelSpinFinished();
+                })
+                .start();
+        });
+    }
+
+    /** 轮盘开始旋转前：wheelPanel 上移 + 放到 slotPanel 前面 */
+    private moveWheelPanelBeforeSpin(onComplete: () => void) {
+        if (!this.wheelPanel || !this.wheelPanel.isValid) {
+            onComplete && onComplete();
+            return;
+        }
+
+        // 调整层级：如果和 slotPanel 同一个父节点，则放到它前面
+        const parent = this.wheelPanel.parent;
+        if (parent && this.slotPanel && this.slotPanel.isValid && this.slotPanel.parent === parent) {
+            const children = parent.children;
+            const slotIndex = children.indexOf(this.slotPanel);
+            if (slotIndex >= 0) {
+                this.wheelPanel.setSiblingIndex(slotIndex + 1);
+            }
+        }
+
+        // 计算目标位置：在初始位置基础上 Y+distance，避免多次叠加
+        const basePos = this._wheelPanelOriginPos
+            ? this._wheelPanelOriginPos
+            : this.wheelPanel.position.clone();
+
+        const targetPos = new Vec3(
+            basePos.x,
+            basePos.y + this.wheelPanelMoveUpDistance,
+            basePos.z
+        );
+
+        // 如果距离或时间为 0，就直接设置并回调
+        if (this.wheelPanelMoveUpDuration <= 0 || this.wheelPanelMoveUpDistance === 0) {
+            this.wheelPanel.setPosition(targetPos);
+            onComplete && onComplete();
+            return;
+        }
+
+        tween(this.wheelPanel)
+            .to(this.wheelPanelMoveUpDuration, { position: targetPos }, { easing: easeBezier_22_1_36_1 })
+            .call(() => {
+                onComplete && onComplete();
             })
             .start();
     }
@@ -299,8 +425,30 @@ export class FeatureFiresawController extends Component {
 
     private onWheelSpinFinished() {
         this._isWheelSpinning = false;
-        this.stopArrowWobble(); // 这里还是会重置角度
-        this.playModeFeature();
+        this.stopArrowWobble();
+
+        // 先让 wheelMask 延迟一段时间后从 0 → 1（0 → 255），再进入 firesaw 动画
+        if (this.wheelMask && this.wheelMask.isValid) {
+            let op = this.wheelMask.getComponent(UIOpacity);
+            if (!op) op = this.wheelMask.addComponent(UIOpacity);
+
+            this.wheelMask.active = true;
+            op.opacity = 0;
+
+            const fadeDur = Math.max(this.wheelMaskFadeDuration, 0.01);
+            const delayDur = Math.max(this.wheelMaskDelay, 0);
+
+            tween(op)
+                .delay(delayDur) // 等待 wheelMaskDelay 秒（比如 2s）
+                .to(fadeDur, { opacity: 255 }, { easing: easeBezier_22_1_36_1 })
+                .call(() => {
+                    this.playModeFeature();
+                })
+                .start();
+        } else {
+            // 没配 mask 就直接进 firesaw 动画
+            this.playModeFeature();
+        }
     }
 
     /* ============ 通用 Feature Mode 动画（现在是 firesaw） ============ */
@@ -331,10 +479,22 @@ export class FeatureFiresawController extends Component {
     }
 
     private onModeFinished() {
-        if (this.scatterBtn) {
-            this.scatterBtn.active = true;
-        }
+    if (this.scatterBtn) {
+        this.scatterBtn.active = true;
+
+        // ✅ ScatterBtn 出现 1 秒后显示 tap 提示
+        this.scheduleOnce(() => {
+            if (TapHintManager.instance && this.scatterBtn && this.scatterBtn.isValid) {
+                TapHintManager.instance.showTap(
+                    this.scatterBtn,
+                    new Vec3(0, -60, 0),   // 按钮上方 80
+                    this.scatterBtn        // 点击 scatterBtn 后自动隐藏
+                );
+            }
+        }, 1.0);
     }
+}
+
 
     /** ScatterBtn 点击后进入 Scatter0 */
     public onClickScatterBtn() {

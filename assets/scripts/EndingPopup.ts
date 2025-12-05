@@ -1,77 +1,73 @@
 // assets/scripts/EndingPopup.ts
-import { _decorator, Component, Node, sp, Label, tween } from 'cc';
+import { _decorator, Component, Node, sp, Label, tween, Vec3, Tween } from 'cc';
 const { ccclass, property } = _decorator;
+import { TapHintManager } from './TapHintManager';
 
 @ccclass('EndingPopup')
 export class EndingPopup extends Component {
 
-    /** Grand 后延迟多少秒出现弹窗 */
     @property
     delayAfterGrand: number = 2.0;
 
-    /** excellentwin 根节点 */
+    @property
+    tapHintDelay: number = 2.0;
+
     @property(Node)
     excellentwin: Node | null = null;
 
-    /** 出现时播放的动画（默认 birth） */
-    @property({
-        tooltip: "弹窗第一次出现时播放的 Spine 动画名称（非循环）"
-    })
+    /** 原底部 CTA（要隐藏） */
+    @property(Node)
+    bottomCtaBtn: Node | null = null;
+
+    /** 弹窗 CTA（要显示 + 呼吸动画） */
+    @property(Node)
+    popupCtaBtn: Node | null = null;
+
+    @property
     birthAnimation: string = 'birth';
 
-    /** 随后循环播放的动画（默认 loop） */
-    @property({
-        tooltip: "birth 播完后接着循环播放的 Spine 动画名称（循环）"
-    })
+    @property
     loopAnimation: string = 'loop';
 
-    // ---------- 数字滚动相关 ----------
-
-    /** 显示中奖金额的 Label（截图里的黄色数字那一个） */
     @property(Label)
     winLabel: Label | null = null;
 
-    /** 数字滚动起始值 */
     @property
     startValue: number = 0;
 
-    /** 数字滚动结束值（最终显示的数值） */
     @property
     endValue: number = 999999999999;
 
-    /** 数字滚动时长（秒） */
     @property
     rollDuration: number = 1.2;
 
-    // ----------------------------------
+    /** ⭐ CTA 呼吸动画 Tween 句柄 */
+    private _ctaBreathTween: Tween<Node> | null = null;
 
     onLoad () {
-        // 默认隐藏
         this.node.active = false;
 
-        // 自动查找 excellentwin
         if (!this.excellentwin) {
             this.excellentwin =
                 this.node.getChildByName('excillentwin') ||
                 this.node.getChildByName('excellentwin');
         }
 
-        // 自动查找 Label（如果没在属性里手动拖）
         if (!this.winLabel && this.excellentwin) {
             const labelNode = this.excellentwin.getChildByName('Label');
             this.winLabel = labelNode?.getComponent(Label) ?? null;
         }
+
+        if (this.popupCtaBtn) {
+            this.popupCtaBtn.active = false;
+        }
     }
 
-    /** Grand 触发后延迟显示 */
     public showAfterGrand (delay?: number) {
         const d = delay ?? this.delayAfterGrand;
-        this.scheduleOnce(() => {
-            this.showAndPlay();
-        }, d);
+        this.scheduleOnce(() => this.showAndPlay(), d);
     }
 
-    /** 显示并播放动画 + 数字滚动 */
     public showAndPlay () {
         this.node.active = true;
 
@@ -81,55 +77,101 @@ export class EndingPopup extends Component {
             return;
         }
 
-        // 播放所有 Spine：birth -> loop
+        // 播 Spine birth → loop
         for (const child of root.children) {
             const ske = child.getComponent(sp.Skeleton);
             if (!ske) continue;
 
             if (this.birthAnimation && ske.findAnimation(this.birthAnimation)) {
                 ske.setAnimation(0, this.birthAnimation, false);
-            } else {
-                console.warn(`[EndingPopup] birthAnimation "${this.birthAnimation}" not found on ${child.name}`);
             }
-
             if (this.loopAnimation && ske.findAnimation(this.loopAnimation)) {
                 ske.addAnimation(0, this.loopAnimation, true, 0);
-            } else {
-                console.warn(`[EndingPopup] loopAnimation "${this.loopAnimation}" not found on ${child.name}`);
             }
         }
 
-        // 开始数字滚动
         this._playRollNumber();
+
+        // 隐藏底部 CTA
+        if (this.bottomCtaBtn) this.bottomCtaBtn.active = false;
+
+        // 显示弹窗 CTA 并播放呼吸动画
+        if (this.popupCtaBtn) {
+            this.popupCtaBtn.active = true;
+            this._startCtaBreath(this.popupCtaBtn); 
+        }
+
+        // Tap 提示
+        if (TapHintManager.instance) {
+            const delay = Math.max(this.tapHintDelay, 0);
+
+            this.scheduleOnce(() => {
+                if (!this.popupCtaBtn || !this.popupCtaBtn.isValid) return;
+
+                TapHintManager.instance.showTap(
+                    this.popupCtaBtn,
+                    new Vec3(0, -40, 0),
+                    this.popupCtaBtn
+                );
+            }, delay);
+        }
     }
 
-    /** 数字从 startValue 滚到 endValue，类似 jackpotPanel 的效果 */
+    /** CTA 呼吸动画 */
+    private _startCtaBreath(btn: Node) {
+        if (!btn || !btn.isValid) return;
+
+        // 停掉旧的
+        if (this._ctaBreathTween) {
+            this._ctaBreathTween.stop();
+            this._ctaBreathTween = null;
+        }
+
+        const origin = btn.scale.clone();
+        const big = new Vec3(origin.x * 1.08, origin.y * 1.08, origin.z);
+
+        this._ctaBreathTween = tween(btn)
+            .to(0.5, { scale: big })
+            .to(0.5, { scale: origin })
+            .union()
+            .repeatForever()
+            .start();
+
+        // 点击 CTA 时停止呼吸动画
+        btn.once(Node.EventType.TOUCH_END, () => {
+            this._stopCtaBreath();
+        });
+    }
+
+    private _stopCtaBreath() {
+        if (this._ctaBreathTween) {
+            this._ctaBreathTween.stop();
+            this._ctaBreathTween = null;
+        }
+        if (this.popupCtaBtn && this.popupCtaBtn.isValid) {
+            // 恢复原缩放
+            this.popupCtaBtn.setScale(1, 1, 1);
+        }
+    }
+
+    /** 数字滚动 */
     private _playRollNumber () {
         if (!this.winLabel) return;
 
-        const start = this.startValue;
-        const end   = this.endValue;
-
-        // 先显示起始值
-        this.winLabel.string = this._formatNumber(start);
-
-        const data = { value: start };
+        const data = { value: this.startValue };
+        this.winLabel.string = this._formatNumber(this.startValue);
 
         tween(data)
-            .to(this.rollDuration, { value: end }, {
+            .to(this.rollDuration, { value: this.endValue }, {
                 onUpdate: () => {
-                    // 每一帧更新 Label 文本
-                    const v = Math.round(data.value);
-                    this.winLabel!.string = this._formatNumber(v);
+                    this.winLabel!.string = this._formatNumber(Math.round(data.value));
                 },
             })
             .start();
     }
 
-    /** 格式化成 99,999,999,999,999 这种形式 */
     private _formatNumber (value: number): string {
         const str = Math.max(0, Math.floor(value)).toString();
-        // 插入千位分隔符
         return str.replace(/\B(?=(\d{3})+(?!\d))/g, ',');
     }
 }

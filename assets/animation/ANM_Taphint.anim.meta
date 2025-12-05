@@ -2,12 +2,12 @@
   "ver": "2.0.4",
   "importer": "animation-clip",
   "imported": true,
-  "uuid": "d1d118bb-e4dd-4bea-be8c-fbec7128ac69",
+  "uuid": "20dda4f9-8517-46ce-aed0-f35ef3ceb4e7",
   "files": [
     ".bin"
   ],
   "subMetas": {},
   "userData": {
-    "name": "coin_sprite"
+    "name": "ANM_Taphint"
   }
 }

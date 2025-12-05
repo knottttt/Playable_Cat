@@ -5,7 +5,7 @@ import {
     Node,
     Animation,
     UIOpacity,
-    director, 
+    director,
 } from 'cc';
 
 const { ccclass, property } = _decorator;
@@ -15,7 +15,6 @@ export class FxFireSaw extends Component {
 
     /**
      * 对应这一行 5 个格子的 frame0 节点
-
      */
     @property([Node])
     frameAnimNodes: Node[] = [];
@@ -31,9 +30,18 @@ export class FxFireSaw extends Component {
     /** 调试：运行时在 Inspector 里修改，会立刻播放对应格子的黄框动画 */
     @property
     debugIndex: number = -1;
-    
+
+    /** 是否是最后一行，用于发 FIRESAW_FINISHED */
     @property
     isLastRow: boolean = false;
+
+    /** 🔹 这一行在 HouseGrid 中的行号（0 基础） */
+    @property({ tooltip: '这一行在 HouseGrid 中的行号（0 开始）' })
+    rowIndex: number = 0;
+
+    /** 🔹 ANM_frame 播完后，过多少秒再让 FxHouseGrid 播对应格子的房子动画 */
+    @property({ tooltip: '每个格子 ANM_frame 播完后，到 HouseGrid 播房子动画的延迟（秒）' })
+    cellToHouseDelay: number = 0.3;
 
     private _lastDebugIndex: number = -1;
 
@@ -136,8 +144,18 @@ export class FxFireSaw extends Component {
 
         // 3）开始播放黄框动画（从 0 帧起播）
         anim.play(clipName);
+
+        // 4）🔹 过 cellToHouseDelay 秒后通知 FxHouseGrid：这一行的第 index 个格子触发
+        const delay = Math.max(this.cellToHouseDelay, 0);
+        this.scheduleOnce(() => {
+            director.emit('FIRESAW_CELL_TRIGGER', this.rowIndex, index, 0);
+            // 这里 extraDelay 给 0，真正的时间已经由 cellToHouseDelay 控制
+            // 如果你想再加一层偏移，也可以把 delay 传过去而不是 0
+            // director.emit('FIRESAW_CELL_TRIGGER', this.rowIndex, index, delay);
+        }, delay);
     }
-    
+
+    /** 行动画结束时，在动画事件里调用 */
     public onRowAnimFinished () {
         if (!this.isLastRow) {
             return;

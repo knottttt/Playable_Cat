@@ -26,7 +26,6 @@ interface HouseConfig {
     cellOffset?: number;       // 每个格子的偏移（秒）
 }
 
-
 @ccclass('FxHouseGrid')
 export class FxHouseGrid extends Component {
 
@@ -59,6 +58,12 @@ export class FxHouseGrid extends Component {
     @property
     debugPlayOnStart: boolean = false;
 
+    /** 🔹 使用 FireSaw 的逐格触发模式 */
+    @property({
+        tooltip: '为 true 时：由 FxFireSaw 的 FIRESAW_CELL_TRIGGER 逐格触发；为 false 时：仍然在 FIRESAW_FINISHED 里整盘播放 _playAllCells()'
+    })
+    useFireSawCellTrigger: boolean = true;
+
     private _cfg: HouseConfig | null = null;
     private _goldSet: Set<number> = new Set();
     private _grandSet: Set<number> = new Set();
@@ -67,8 +72,9 @@ export class FxHouseGrid extends Component {
         this._loadConfigFromTxt();
         this._initAllCellsVisual();
 
-        // 监听 FxFireSaw 发出来的事件
+        // 监听 FxFireSaw 的事件
         director.on('FIRESAW_FINISHED', this._onFireSawFinished, this);
+        director.on('FIRESAW_CELL_TRIGGER', this._onCellTriggered, this);
     }
 
     start () {
@@ -79,16 +85,35 @@ export class FxHouseGrid extends Component {
 
     onDestroy () {
         director.off('FIRESAW_FINISHED', this._onFireSawFinished, this);
+        director.off('FIRESAW_CELL_TRIGGER', this._onCellTriggered, this);
     }
 
     //======================
     // 事件入口
     //======================
 
-    /** 收到 FireSaw 完成事件 → 正式开始 house grid */
+    /** 收到 FireSaw 行全部结束事件 */
     private _onFireSawFinished () {
-        console.log('[FxHouseGrid] receive FIRESAW_FINISHED, start grid');
-        this._playAllCells();
+        console.log('[FxHouseGrid] receive FIRESAW_FINISHED');
+
+        // 老逻辑：整盘一次性播放
+        if (!this.useFireSawCellTrigger) {
+            this._playAllCells();
+        }
+        // 新逻辑：逐格触发时，这里什么也不做
+    }
+
+    /** 🔹 某一行/某一格的 ANM_frame 播完后触发 (row, col, extraDelay) */
+    private _onCellTriggered (row: number, col: number, extraDelay: number = 0) {
+        if (!this._cfg || !this.gridLayout) {
+            console.warn('[FxHouseGrid] _onCellTriggered but cfg or gridLayout not ready');
+            return;
+        }
+        const cols = this._cfg.cols || 0;
+        const index = row * cols + col;
+        // console.log('[FxHouseGrid] cell triggered row=', row, 'col=', col, 'index=', index, 'delay=', extraDelay);
+
+        this._playOneCellWithBaseDelay(index, extraDelay);
     }
 
     //======================
@@ -160,23 +185,40 @@ export class FxHouseGrid extends Component {
     }
 
     //======================
-    // 主流程：按配置播放整个 Grid
+    // 主流程：按配置播放整个 Grid（老逻辑）
     //======================
 
     private _playAllCells () {
-    if (!this._cfg || !this.gridLayout) {
-        console.warn('[FxHouseGrid] _cfg 或 gridLayout 未就绪');
-        return;
+        if (!this._cfg || !this.gridLayout) {
+            console.warn('[FxHouseGrid] _cfg 或 gridLayout 未就绪');
+            return;
+        }
+
+        const cfg = this._cfg;
+        const startDelay = cfg.startDelay ?? 0;
+        const cellOffset = cfg.cellOffset ?? 0.08;
+
+        const totalCells = this.gridLayout.children.length;
+
+        for (let index = 0; index < totalCells; index++) {
+            const baseDelay = startDelay + cellOffset * index;
+            this._playOneCellWithBaseDelay(index, baseDelay);
+        }
     }
 
-    const cfg = this._cfg;
-    const numbers = cfg.rewardNumbers || [];
-    const startDelay = cfg.startDelay ?? 0;
-    const cellOffset = cfg.cellOffset ?? 0.08;
+    /** 🔹 把“单个格子完整播放逻辑”抽出来，baseDelay 由外部决定 */
+    private _playOneCellWithBaseDelay (index: number, baseDelay: number) {
+        if (!this._cfg || !this.gridLayout) return;
 
-    const totalCells = this.gridLayout.children.length;
+        const cfg = this._cfg;
+        const numbers = cfg.rewardNumbers || [];
+        const totalCells = this.gridLayout.children.length;
 
-    for (let index = 0; index < totalCells; index++) {
+        if (index < 0 || index >= totalCells) {
+            console.warn('[FxHouseGrid] _playOneCellWithBaseDelay invalid index =', index);
+            return;
+        }
+
         const bonusNode = this.gridLayout.children[index];
         const reward = numbers[index] ?? 0;
         const isGold  = this._goldSet.has(index);
@@ -184,11 +226,11 @@ export class FxHouseGrid extends Component {
 
         const houseRoot = bonusNode.getChildByName('house');
         const numRoot   = bonusNode.getChildByName('num');
-        if (!houseRoot || !numRoot) continue;
+        if (!houseRoot || !numRoot) return;
 
         const spineNode = houseRoot.getChildByName('house');
         const spine = spineNode?.getComponent(sp.Skeleton) ?? null;
-        if (!spine) continue;
+        if (!spine) return;
 
         const bgSilver = houseRoot.getChildByName('bg_silver');
         const bgGold   = houseRoot.getChildByName('bg_gold');
@@ -214,17 +256,13 @@ export class FxHouseGrid extends Component {
 
         // 空格子（既不是 grand 又没有数值）直接跳过
         if (reward <= 0 && !isGrand) {
-            continue;
+            return;
         }
 
         const useGold = isGold || isGrand;
-
         const showAnim    = useGold ? 'gold_show'    : 'silver_show';
         const destroyAnim = useGold ? 'gold_destory' : 'sliver_destory';
         const bgTarget    = useGold ? bgGold : bgSilver;
-
-        // 每个格子自己的时间偏移
-        const baseDelay = startDelay + cellOffset * index;
 
         // 把初始状态重置一下
         if (bgSilver) {
@@ -267,13 +305,13 @@ export class FxHouseGrid extends Component {
                 numRoot.active = true;
                 const numOp = this._ensureOpacity(numRoot, 0);
 
-                // 设置金银颜色（注意这里我用的是 RGBA，不是 '#xxxxxx'）
+                // 设置金银颜色
                 if (label) {
                     if (isGold) {
                         // #fcd817
                         label.color = new Color(252, 216, 23, 255);
                     } else {
-                        // #f3f9ff 你可以改成你想要的银色
+                        // #f3f9ff
                         label.color = new Color(243, 249, 255, 255);
                     }
                 }
@@ -308,7 +346,6 @@ export class FxHouseGrid extends Component {
 
         }, baseDelay);
     }
-}
 
     //======================
     // 小工具函数
@@ -320,7 +357,6 @@ export class FxHouseGrid extends Component {
         if (!op) {
             op = node.addComponent(UIOpacity);
         }
-        // defaultValue 只在初始化阶段用，这里不强行覆盖
         return op;
     }
 

@@ -10,6 +10,8 @@ import {
     Tween,
 } from 'cc';
 import { FeatureFiresawController } from './FeatureFiresawController';
+import { TapHintManager } from './TapHintManager';
+
 
 const { ccclass, property } = _decorator;
 
@@ -28,11 +30,17 @@ type HighlightData = {
 @ccclass('SlotIdleController')
 export class SlotIdleController extends Component {
 
+    /** 滚轴布局根节点（用于收集 cell_xx） */
     @property(Node)
     slotLayout: Node = null;
 
+    /** 开局盖在 reel 上的黑幕（200 → 0） */
     @property(Node)
     blackMask: Node = null;
+
+    /** 结果结算后，用于转场到 wheel 的黑幕数组（全部 0 → 155） */
+    @property([Node])
+    transitionBlackMasks: Node[] = [];
 
     @property(Node)
     spinButton: Node = null;
@@ -55,7 +63,7 @@ export class SlotIdleController extends Component {
     featureDelay: number = 2.0;
 
     private spinTween: Tween<Node> = null;
-private originalScale: Vec3 | null = null;  
+    private originalScale: Vec3 | null = null;
     private isReelSpinning: boolean = false;
 
     private cells: CellData[] = [];
@@ -68,11 +76,35 @@ private originalScale: Vec3 | null = null;
         this.collectCells();
         this.randomizeIconsForIdle();
 
+        // 开局主黑幕盖在转轴上
         if (this.blackMask) {
             this.blackMask.active = true;
         }
 
+        // 初始化多个转场 blackMask：先隐藏 & 透明度 0
+        if (this.transitionBlackMasks && this.transitionBlackMasks.length > 0) {
+            for (let i = 0; i < this.transitionBlackMasks.length; i++) {
+                const mask = this.transitionBlackMasks[i];
+                if (!mask || !mask.isValid) continue;
+
+                let op = mask.getComponent(UIOpacity);
+                if (!op) op = mask.addComponent(UIOpacity);
+                op.opacity = 0;
+                mask.active = false;
+            }
+        }
+
         this.startSpinButtonIdle();
+
+        
+    // ✅ 一开始在 Spin 按钮附近显示 tap 提示
+    if (TapHintManager.instance && this.spinButton) {
+        TapHintManager.instance.showTap(
+            this.spinButton,
+            new Vec3(16, -25, 0),   // 往上 80，可自己调
+            this.spinButton        // 点击 Spin 后自动隐藏 tap
+            );
+        }   
     }
 
     /* 收集 cell 结构 */
@@ -172,24 +204,21 @@ private originalScale: Vec3 | null = null;
             .start();
     }
 
-    // 原来是：
-// private stopSpinButtonIdle() {
     private stopSpinButtonIdle(resetScale: boolean = true) {
-    if (this.spinTween) {
-        this.spinTween.stop();
-        this.spinTween = null;
-    }
+        if (this.spinTween) {
+            this.spinTween.stop();
+            this.spinTween = null;
+        }
 
-    // 只有在需要时才恢复缩放，并且要保证各种对象有效
-    if (
-        resetScale &&
-        this.spinButton &&
-        this.spinButton.isValid &&
-        this.originalScale
-    ) {
-        this.spinButton.setScale(this.originalScale);
+        if (
+            resetScale &&
+            this.spinButton &&
+            this.spinButton.isValid &&
+            this.originalScale
+        ) {
+            this.spinButton.setScale(this.originalScale);
+        }
     }
-}
 
     /* 点击 Spin */
 
@@ -241,21 +270,56 @@ private originalScale: Vec3 | null = null;
             this.isReelSpinning = false;
 
             this.stepIconsOnce();
-
             this.applyFinalResult();
 
             // ✳️ 开始结果高亮（呼吸）
             this.startResultHighlight();
 
-            // ✳️ 等待 featureDelay 秒：停止 cell 呼吸 → 进入 feature（alarm + blackMask）
+            // ✳️ 等待 featureDelay 秒：停止 cell 呼吸 → 渐显多个 blackMask → 进入 wheelOnly
             if (!this.hasTriggeredFeature && this.featureController) {
                 this.hasTriggeredFeature = true;
                 this.scheduleOnce(() => {
-                    this.stopResultHighlight();               // 显示 feature 时停止 cell 呼吸
-                    this.featureController.startWheelFeature();
+                    // 1）停掉呼吸动画
+                    this.stopResultHighlight();
+
+                    // 2）渐显转场黑幕，再进入 wheel（跳过警铃）
+                    this.fadeInTransitionMaskAndEnterFeature();
                 }, this.featureDelay);
             }
         }
+    }
+
+    /** 结算后渐显多个 blackMask（0 → 155）再进入 wheel feature */
+    private fadeInTransitionMaskAndEnterFeature() {
+        if (!this.featureController) return;
+
+        // 若数组为空，则直接进入 wheel
+        if (!this.transitionBlackMasks || this.transitionBlackMasks.length === 0) {
+            this.featureController.startWheelOnly();
+            return;
+        }
+
+        // 每个 blackMask 都从 0 → 155
+        for (let i = 0; i < this.transitionBlackMasks.length; i++) {
+            const mask = this.transitionBlackMasks[i];
+            if (!mask || !mask.isValid) continue;
+
+            let op = mask.getComponent(UIOpacity);
+            if (!op) op = mask.addComponent(UIOpacity);
+
+            // 保证从 0 开始
+            op.opacity = 0;
+            mask.active = true;
+
+            tween(op)
+                .to(0.4, { opacity: 155 })   // 可按手感调整时间和目标值
+                .start();
+        }
+
+        // 0.4 秒后进入 wheel 动画（与 tween 时间保持一致）
+        this.scheduleOnce(() => {
+            this.featureController.startWheelOnly();
+        }, 0.4);
     }
 
     /* 最终结果：scatter/feature + 其他随机 */
@@ -367,10 +431,10 @@ private originalScale: Vec3 | null = null;
     }
 
     onDestroy() {
-    try {
-        this.stopSpinButtonIdle();
-    } catch (e) {
-        console.warn("[SlotIdleController] onDestroy skipped, node already destroyed");
-    }
+        try {
+            this.stopSpinButtonIdle();
+        } catch (e) {
+            console.warn("[SlotIdleController] onDestroy skipped, node already destroyed");
+        }
     }
 }

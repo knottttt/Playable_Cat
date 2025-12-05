@@ -2,8 +2,8 @@
   "__type__": "cc.RenderTexture",
   "content": {
     "base": "2,2,0,0,0,0",
-    "w": 2048,
-    "h": 2048,
+    "w": 1334,
+    "h": 1334,
     "n": "RT_Coin"
   }
 }
